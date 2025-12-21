@@ -308,24 +308,17 @@ const App: React.FC = () => {
       const selectedClient = clients.find(c => c.id === updatedRecord.clientId);
       const selectedTech = techs.find(t => t.id === updatedRecord.technicianId);
       
+      // Payload optimizado para ACTUALIZACIÓN (Upsert)
       const formattedPayload: Record<string, string | number> = {
-         "Folio": updatedRecord.sampleId,
-         "Muestra": updatedRecord.sampleName,
-         "Producto": updatedRecord.product,
-         "Lote": updatedRecord.batch || "",
-         "Cliente": selectedClient?.name || "N/A",
-         "Técnico": selectedTech?.name || "N/A",
-         "Fecha Recepción": updatedRecord.receptionDate,
-         "Fecha Entrega": updatedRecord.deliveryDate,
+         "Folio": updatedRecord.sampleId, // KEY única para buscar en Sheets
          "Estatus": "Completado",
          "Costo": updatedRecord.cost
       };
 
+      // Agregar resultados finales
       types.forEach(type => {
           if (currentResults[type.id]) {
               formattedPayload[type.name] = currentResults[type.id];
-          } else if (updatedRecord.analysisIds.includes(type.id)) {
-              formattedPayload[type.name] = "PENDIENTE";
           }
       });
 
@@ -358,6 +351,7 @@ const App: React.FC = () => {
     setShowAnalysisModal(false);
 
     if (googleUrl) {
+       // Payload optimizado para INGRESO (Upsert)
        const formattedPayload: Record<string, string | number> = {
           "Folio": record.sampleId,
           "Muestra": record.sampleName,
@@ -367,14 +361,14 @@ const App: React.FC = () => {
           "Técnico": selectedTech?.name || "N/A",
           "Fecha Recepción": record.receptionDate,
           "Fecha Entrega": record.deliveryDate,
-          "Estatus": record.status,
-          "Costo": record.cost,
-          "Lista Análisis": types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => t.name).join(', ')
+          "Estatus": "Pendiente",
+          "Costo": record.cost
        };
        
+       // Inicializar columnas de análisis solicitados con marca visual
        types.forEach(type => {
           if ((record.analysisIds || []).includes(type.id)) {
-             formattedPayload[type.name] = "SOLICITADO";
+             formattedPayload[type.name] = "[SOLICITADO]";
           }
        });
 
@@ -488,7 +482,7 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase">{syncStatus === 'success' ? 'Enviado OK' : syncStatus === 'error' ? 'Error URL' : 'Sheets Conectado'}</span>
                </div>
              )}
-             <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded">V 2.3 Stable</span>
+             <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded">V 2.4 Upsert</span>
           </div>
         </header>
 
@@ -934,36 +928,131 @@ const App: React.FC = () => {
 
              <div className="flex min-h-full items-center justify-center p-4 py-20">
                 <div id="report-preview" className="bg-white w-full max-w-[21cm] min-h-[29.7cm] shadow-2xl p-12 text-slate-800">
-                    <div className="flex justify-between items-end border-b-2 border-indigo-600 pb-6 mb-8">
-                       <div>
-                          <h1 className="text-4xl font-bold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1>
-                          <p className="text-sm text-slate-500">Servicios Analíticos de Precisión</p>
+                    {/* Header Reporte */}
+                    <div className="flex justify-between items-start border-b-2 border-indigo-600 pb-6 mb-8">
+                       <div className="flex items-center gap-4">
+                          <div className="bg-indigo-600 p-2 rounded-lg text-white"><Beaker size={32} /></div>
+                          <div>
+                            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">LabSync <span className="text-indigo-600">Pro</span></h1>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Servicios Analíticos de Excelencia</p>
+                          </div>
                        </div>
                        <div className="text-right">
-                          <h2 className="text-2xl font-bold text-slate-800">CERTIFICADO</h2>
-                          <p className="text-sm">Folio: {selectedRecordForReport.sampleId}</p>
+                          <h2 className="text-2xl font-black text-indigo-700 mb-1">CERTIFICADO DE ANÁLISIS</h2>
+                          <div className="bg-slate-100 px-3 py-1 rounded-lg inline-block border border-slate-200">
+                             <p className="text-sm font-bold text-slate-600">FOLIO: <span className="font-mono text-indigo-600">{selectedRecordForReport.sampleId}</span></p>
+                          </div>
                        </div>
                     </div>
-                    <div className="mb-12">
-                       <h3 className="text-lg font-bold text-slate-800 mb-4">Resultados</h3>
+
+                    {/* Información del Cliente y Técnico */}
+                    <div className="grid grid-cols-2 gap-10 mb-10">
+                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                          <h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 flex items-center gap-2">
+                             <Users size={12}/> Información del Cliente
+                          </h3>
+                          <div className="space-y-1">
+                             <p className="text-lg font-bold text-slate-900">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name || 'N/A'}</p>
+                             <p className="text-sm text-slate-600 leading-relaxed">{clients.find(c => c.id === selectedRecordForReport.clientId)?.address || 'Dirección no disponible'}</p>
+                             <div className="pt-2 flex flex-col gap-1">
+                                <span className="text-xs text-slate-500 font-bold flex items-center gap-1"><Mail size={10}/> {clients.find(c => c.id === selectedRecordForReport.clientId)?.email || '-'}</span>
+                                <span className="text-xs text-slate-500 font-bold flex items-center gap-1"><Phone size={10}/> {clients.find(c => c.id === selectedRecordForReport.clientId)?.phone || '-'}</span>
+                                <span className="text-xs text-indigo-600 font-bold mt-1 flex items-center gap-1"><UserIcon size={10}/> At'n: {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName || '---'}</span>
+                             </div>
+                          </div>
+                       </div>
+                       <div className="p-5 rounded-2xl border border-slate-100 bg-white">
+                          <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3 flex items-center gap-2">
+                             <ShieldAlert size={12}/> Responsable Técnico
+                          </h3>
+                          <div className="space-y-1">
+                             <p className="text-base font-bold text-slate-800">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name || 'Analista de Turno'}</p>
+                             <p className="text-xs font-bold text-indigo-500 uppercase tracking-tighter">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.specialty || 'Laboratorista Técnico'}</p>
+                             <div className="pt-4 border-t border-slate-50 mt-4 space-y-1">
+                                <p className="text-xs text-slate-400">Fecha de Recepción: <span className="text-slate-700 font-bold">{selectedRecordForReport.receptionDate}</span></p>
+                                <p className="text-xs text-slate-400">Fecha de Emisión: <span className="text-indigo-600 font-bold">{new Date().toLocaleDateString('es-MX')}</span></p>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Datos de la Muestra */}
+                    <div className="mb-10 p-6 bg-indigo-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
+                       <div className="absolute top-0 right-0 p-8 opacity-10"><Package size={120} /></div>
+                       <h3 className="text-[10px] font-black uppercase text-indigo-300 tracking-widest mb-4 flex items-center gap-2">
+                          <Hash size={12}/> Identificación de la Muestra
+                       </h3>
+                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
+                          <div>
+                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Nombre Muestra</p>
+                             <p className="text-base font-bold">{selectedRecordForReport.sampleName}</p>
+                          </div>
+                          <div>
+                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Producto</p>
+                             <p className="text-base font-bold">{selectedRecordForReport.product}</p>
+                          </div>
+                          <div>
+                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Lote / ID</p>
+                             <p className="text-base font-mono font-bold">{selectedRecordForReport.batch || 'N/A'}</p>
+                          </div>
+                          <div>
+                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Procedencia</p>
+                             <p className="text-base font-bold">{selectedRecordForReport.origin || 'N/A'}</p>
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Tabla de Resultados */}
+                    <div className="mb-12 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
+                          <h3 className="text-xs font-black text-slate-600 uppercase flex items-center gap-2 tracking-widest">
+                             <ClipboardList size={14}/> Resultados de Laboratorio
+                          </h3>
+                       </div>
                        <table className="w-full text-left border-collapse">
                           <thead>
-                             <tr className="bg-slate-100 text-slate-600 text-xs">
-                                <th className="px-4 py-3 border-b">Parámetro</th>
-                                <th className="px-4 py-3 border-b text-right">Resultado</th>
-                                <th className="px-4 py-3 border-b pl-6">Unidad</th>
+                             <tr className="bg-white text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                                <th className="px-8 py-4 border-b">Parámetro de Análisis</th>
+                                <th className="px-8 py-4 border-b text-center">Unidad</th>
+                                <th className="px-8 py-4 border-b text-right">Resultado Obtenido</th>
                              </tr>
                           </thead>
-                          <tbody>
+                          <tbody className="divide-y divide-slate-100">
                              {types.filter(t => selectedRecordForReport.analysisIds.includes(t.id)).map((type) => (
-                                <tr key={type.id}>
-                                   <td className="px-4 py-3 border-b font-bold">{type.name}</td>
-                                   <td className="px-4 py-3 border-b text-right font-mono">{selectedRecordForReport.results?.[type.id] || '---'}</td>
-                                   <td className="px-4 py-3 border-b pl-6 text-slate-500">{type.unit}</td>
+                                <tr key={type.id} className="hover:bg-slate-50/30 transition-colors">
+                                   <td className="px-8 py-5 font-bold text-slate-900 border-r border-slate-50">{type.name}</td>
+                                   <td className="px-8 py-5 text-center text-slate-500 font-medium italic border-r border-slate-50">{type.unit}</td>
+                                   <td className="px-8 py-5 text-right font-mono font-black text-indigo-600 text-lg">
+                                      {selectedRecordForReport.results?.[type.id] || 'N.D.'}
+                                   </td>
                                 </tr>
                              ))}
                           </tbody>
                        </table>
+                    </div>
+
+                    {/* Notas y Firmas */}
+                    <div className="mt-auto pt-10 grid grid-cols-2 gap-20">
+                       <div className="space-y-4">
+                          <p className="text-[10px] text-slate-400 italic font-medium leading-relaxed">
+                             * Los resultados contenidos en este certificado se refieren exclusivamente a la muestra recibida y analizada en nuestras instalaciones bajo las condiciones estándar de laboratorio.
+                          </p>
+                       </div>
+                       <div className="flex flex-col items-center">
+                          <div className="w-full border-b-2 border-slate-300 mb-2"></div>
+                          <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Firma Autorizada</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">Sello de Control de Calidad</p>
+                       </div>
+                    </div>
+
+                    {/* Footer del Reporte */}
+                    <div className="mt-20 pt-8 border-t border-slate-100 flex justify-between items-center text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                       <span>Generado vía LabSync Pro ERP System</span>
+                       <div className="flex gap-4">
+                          <span>Certificación ISO 9001:2015</span>
+                          <span>|</span>
+                          <span>Pagina 1 de 1</span>
+                       </div>
                     </div>
                 </div>
              </div>
