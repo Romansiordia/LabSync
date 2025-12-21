@@ -43,7 +43,8 @@ import {
   Save,
   Printer,
   Download,
-  CloudDownload
+  CloudDownload,
+  Lock
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -224,6 +225,35 @@ const App: React.FC = () => {
     return { totalRevenue, completedTests, clientStats, techStats };
   }, [analyses, clients, techs]);
 
+  // --- LÓGICA DE GENERACIÓN DE FOLIO AUTOINCREMENTABLE ---
+  const generateNextFolio = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const prefix = `${year}${month}`; // Ej: 202503
+
+    // Filtrar análisis que empiecen con el prefijo del mes actual
+    const currentMonthAnalyses = analyses
+      .filter(a => a.sampleId && a.sampleId.startsWith(prefix))
+      .map(a => parseInt(a.sampleId.substring(6))) // Extraer los últimos 4 dígitos
+      .filter(num => !isNaN(num));
+
+    const nextNumber = currentMonthAnalyses.length > 0 
+      ? Math.max(...currentMonthAnalyses) + 1 
+      : 1;
+
+    return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
+  };
+
+  const handleOpenAnalysisModal = () => {
+    const nextFolio = generateNextFolio();
+    setNewAnalysis(prev => ({
+      ...prev,
+      sampleId: nextFolio
+    }));
+    setShowAnalysisModal(true);
+  };
+
   // --- FUNCIÓN DE SINCRONIZACIÓN DE BAJADA (PULL) ---
   const pullFromGoogle = async () => {
     if (!googleUrl) {
@@ -245,12 +275,10 @@ const App: React.FC = () => {
 
           const existingIndex = mergedAnalyses.findIndex(a => a.sampleId === row.Folio.toString());
           
-          // Mapeo de Estatus de Sheets a App
           let mappedStatus: Status = 'Pending';
           if (row.Estatus === 'Completado') mappedStatus = 'Completed';
           if (row.Estatus === 'En Proceso') mappedStatus = 'In Progress';
 
-          // Reconstruir Resultados
           const results: Record<string, string> = {};
           types.forEach(t => {
             if (row[t.name] && row[t.name] !== "[SOLICITADO]") {
@@ -258,7 +286,6 @@ const App: React.FC = () => {
             }
           });
 
-          // Buscar IDs de Análisis solicitados (si están marcados o tienen resultados)
           const analysisIds: string[] = [];
           types.forEach(t => {
              if (row[t.name]) analysisIds.push(t.id);
@@ -299,7 +326,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Error al traer datos:", error);
       setSyncStatus('error');
-      alert("Error al conectar con Google Sheets. Verifica la URL y los permisos.");
+      alert("Error al conectar con Google Sheets. Verifica la URL.");
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncStatus('idle'), 3000);
@@ -349,7 +376,7 @@ const App: React.FC = () => {
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
     if (window.html2pdf) { window.html2pdf().set(opt).from(element).save(); } 
-    else { alert("La librería de generación de PDF aún no está lista."); }
+    else { alert("Librería PDF no lista."); }
   };
 
   const handleSaveResults = async (e: React.FormEvent) => {
@@ -574,9 +601,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex gap-3">
                    <button onClick={pullFromGoogle} className="bg-indigo-50 text-indigo-700 px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-100 transition-all font-bold">
-                      <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} /> Actualizar de Sheets
+                      <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} /> Actualizar
                    </button>
-                   <button onClick={() => setShowAnalysisModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95 font-bold">
+                   <button onClick={handleOpenAnalysisModal} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95 font-bold">
                      <Plus size={20} /> Registrar Muestra
                    </button>
                 </div>
@@ -598,7 +625,7 @@ const App: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {analyses.length === 0 ? (
-                        <tr><td colSpan={8} className="px-6 py-20 text-center text-slate-400">No hay ingresos registrados localmente. Sincroniza para traer datos.</td></tr>
+                        <tr><td colSpan={8} className="px-6 py-20 text-center text-slate-400">Sin datos locales. Sincroniza para traer datos.</td></tr>
                       ) : analyses.map(record => (
                         <tr key={record.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-6 py-4">
@@ -671,16 +698,12 @@ const App: React.FC = () => {
           {activeTab === 'clients' && (
             <div className="space-y-6 animate-in">
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">Cartera de Clientes</h3>
-                </div>
-                <button onClick={() => setShowClientModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
-                  <Plus size={20} /> Nuevo Cliente
-                </button>
+                <div><h3 className="text-xl font-bold text-slate-900">Cartera de Clientes</h3></div>
+                <button onClick={() => setShowClientModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all font-bold shadow-lg"><Plus size={20} /> Nuevo Cliente</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {clients.map(client => (
-                  <div key={client.id} className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-indigo-200 transition-all hover:shadow-md group">
+                  <div key={client.id} className="bg-white p-6 rounded-2xl border border-slate-200 hover:border-indigo-200 transition-all group">
                     <div className="flex justify-between items-start mb-4">
                       <div className="bg-indigo-50 p-3 rounded-xl text-indigo-600 font-bold group-hover:bg-indigo-600 group-hover:text-white transition-colors">
                         {client.name.substring(0, 2).toUpperCase()}
@@ -689,10 +712,10 @@ const App: React.FC = () => {
                     </div>
                     <h4 className="font-bold text-slate-800 text-lg mb-1">{client.name}</h4>
                     <p className="text-sm text-slate-500 mb-4">{client.address}</p>
-                    <div className="space-y-2 pt-4 border-t border-slate-100">
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><UserIcon size={14} className="text-indigo-400"/> {client.contactName}</div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><Mail size={14} className="text-indigo-400"/> {client.email}</div>
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><Phone size={14} className="text-indigo-400"/> {client.phone}</div>
+                    <div className="space-y-2 pt-4 border-t border-slate-100 text-sm text-slate-600">
+                      <div className="flex items-center gap-2"><UserIcon size={14} className="text-indigo-400"/> {client.contactName}</div>
+                      <div className="flex items-center gap-2"><Mail size={14} className="text-indigo-400"/> {client.email}</div>
+                      <div className="flex items-center gap-2"><Phone size={14} className="text-indigo-400"/> {client.phone}</div>
                     </div>
                   </div>
                 ))}
@@ -703,12 +726,8 @@ const App: React.FC = () => {
           {activeTab === 'techs' && (
             <div className="space-y-6 animate-in">
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900">Equipo Técnico</h3>
-                </div>
-                <button onClick={() => setShowTechModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
-                  <Plus size={20} /> Registrar Técnico
-                </button>
+                <div><h3 className="text-xl font-bold text-slate-900">Equipo Técnico</h3></div>
+                <button onClick={() => setShowTechModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all font-bold shadow-lg"><Plus size={20} /> Registrar Técnico</button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {techs.map(tech => (
@@ -718,7 +737,7 @@ const App: React.FC = () => {
                         {tech.name.charAt(0)}
                      </div>
                      <h4 className="font-bold text-slate-800">{tech.name}</h4>
-                     <p className="text-xs font-bold uppercase tracking-wider text-indigo-500 mb-4">{tech.specialty}</p>
+                     <p className="text-xs font-bold uppercase text-indigo-500 mb-4">{tech.specialty}</p>
                      <div className="text-sm text-slate-500 space-y-1">
                         <p>{tech.email}</p>
                         <p>{tech.phone}</p>
@@ -739,7 +758,7 @@ const App: React.FC = () => {
                  <>
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                       <div><h3 className="text-xl font-bold text-slate-900">Catálogo de Pruebas</h3></div>
-                      <button onClick={() => setShowTypeModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"><Plus size={20} /> Nueva Prueba</button>
+                      <button onClick={() => setShowTypeModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all font-bold shadow-lg"><Plus size={20} /> Nueva Prueba</button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {types.map(type => (
@@ -760,7 +779,7 @@ const App: React.FC = () => {
                  <>
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                       <div><h3 className="text-xl font-bold text-slate-900">Productos Estándar</h3></div>
-                      <button onClick={() => setShowProductModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"><Plus size={20} /> Nuevo Producto</button>
+                      <button onClick={() => setShowProductModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all font-bold shadow-lg"><Plus size={20} /> Nuevo Producto</button>
                     </div>
                     <div className="bg-white p-6 rounded-2xl border border-slate-200">
                        <div className="flex flex-wrap gap-3">
@@ -782,32 +801,29 @@ const App: React.FC = () => {
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div>
-                  <div><h3 className="text-xl font-bold text-slate-900">Configuración de Sincronización</h3></div>
+                  <div><h3 className="text-xl font-bold text-slate-900">Sincronización</h3></div>
                 </div>
                 <div className="space-y-6">
-                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-sm text-slate-600 space-y-3">
-                    <p>Pega aquí la URL de tu Google Apps Script. Recuerda que la URL debe ser la de la "Implementación" (Deployment) más reciente.</p>
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-sm text-slate-600">
+                    <p>Configura la URL de Google Apps Script para sincronizar en tiempo real.</p>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 ml-1">URL de Implementación</label>
+                    <label className="text-xs font-bold text-slate-500 ml-1">URL Google Sheets</label>
                     <div className="flex gap-3">
                       <input 
                         type="text" 
                         placeholder="https://script.google.com/macros/s/.../exec"
-                        className="flex-1 px-5 py-3.5 rounded-2xl border border-slate-200 outline-none text-sm font-mono focus:ring-2 focus:ring-indigo-500 transition-all bg-slate-50"
+                        className="flex-1 px-5 py-3.5 rounded-2xl border border-slate-200 outline-none text-sm font-mono focus:ring-2 focus:ring-indigo-500 bg-slate-50"
                         value={googleUrl}
                         onChange={(e) => setGoogleUrl(e.target.value)}
                       />
-                      <button onClick={() => alert("URL guardada.")} className="px-6 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg transition-all">Guardar</button>
+                      <button onClick={() => alert("Guardado")} className="px-6 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700">Guardar</button>
                     </div>
                   </div>
                   <div className="pt-6 border-t border-slate-100">
-                     <button 
-                        onClick={pullFromGoogle} 
-                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-black transition-all"
-                     >
+                     <button onClick={pullFromGoogle} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-black transition-all">
                         <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
-                        Probar Conexión y Descargar Datos
+                        Descargar Datos de la Nube
                      </button>
                   </div>
                 </div>
@@ -843,7 +859,18 @@ const App: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <input type="text" placeholder="Lote" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
-                   <input type="text" required placeholder="ID Folio *" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.sampleId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleId: e.target.value})} />
+                   <div className="relative">
+                      <span className="absolute left-4 top-2 text-[10px] font-bold text-indigo-500 uppercase tracking-wider flex items-center gap-1">
+                        <Lock size={10} /> Folio Automático (YYYYMMXXXX)
+                      </span>
+                      <input 
+                        type="text" 
+                        readOnly
+                        placeholder="ID Folio" 
+                        className="w-full px-5 pt-6 pb-2 rounded-2xl border bg-indigo-50/50 text-indigo-900 font-bold border-indigo-200" 
+                        value={newAnalysis.sampleId || ''} 
+                      />
+                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <select required className="w-full px-5 py-3.5 rounded-2xl border bg-white" value={newAnalysis.clientId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
@@ -868,10 +895,10 @@ const App: React.FC = () => {
                         })}
                     </div>
                 </div>
-                <div className="flex justify-end bg-indigo-50 p-4 rounded-xl"><span className="text-slate-600 font-medium">Costo Estimado: ${newAnalysis.cost || 0}</span></div>
+                <div className="flex justify-end bg-indigo-50 p-4 rounded-xl"><span className="text-slate-600 font-medium font-bold">Inversión Total: ${newAnalysis.cost || 0}</span></div>
                 <div className="pt-6 flex gap-4">
                   <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl">Cancelar</button>
-                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">{isSyncing ? 'Enviando...' : 'Confirmar Ingreso'}</button>
+                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">Confirmar Ingreso</button>
                 </div>
               </form>
             </div>
@@ -891,13 +918,13 @@ const App: React.FC = () => {
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{type.name} ({type.unit})</label>
-                                    <input type="text" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
+                                    <input type="text" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none font-bold" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
                                 </div>
                             ))}
                         </div>
                         <div className="pt-6 flex gap-4">
                             <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cancelar</button>
-                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl">Guardar y Sincronizar</button>
+                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg">Guardar Resultados</button>
                         </div>
                     </form>
                 </div>
@@ -917,7 +944,7 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-start border-b-2 border-indigo-600 pb-6 mb-8">
                        <div className="flex items-center gap-4">
                           <div className="bg-indigo-600 p-2 rounded-lg text-white"><Beaker size={32} /></div>
-                          <div><h1 className="text-3xl font-extrabold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Excelencia Analítica</p></div>
+                          <div><h1 className="text-3xl font-extrabold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-xs text-slate-500 font-bold uppercase">Excelencia Analítica</p></div>
                        </div>
                        <div className="text-right">
                           <h2 className="text-2xl font-black text-indigo-700">CERTIFICADO</h2>
@@ -928,14 +955,17 @@ const App: React.FC = () => {
                        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
                           <h3 className="text-[10px] font-black uppercase text-indigo-500 mb-3 flex items-center gap-2"><Users size={12}/> Cliente</h3>
                           <p className="text-lg font-bold text-slate-900">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name || 'N/A'}</p>
-                          <p className="text-sm text-slate-600">{clients.find(c => c.id === selectedRecordForReport.clientId)?.address}</p>
-                          <p className="text-xs text-indigo-600 font-bold mt-2">At'n: {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName}</p>
+                          <p className="text-sm text-slate-600 leading-tight mb-2">{clients.find(c => c.id === selectedRecordForReport.clientId)?.address}</p>
+                          <p className="text-xs text-indigo-600 font-bold">At'n: {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName}</p>
                        </div>
                        <div className="p-5 rounded-2xl border border-slate-100 bg-white">
-                          <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><ShieldAlert size={12}/> Técnico Responsable</h3>
+                          <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><ShieldAlert size={12}/> Técnico</h3>
                           <p className="text-base font-bold text-slate-800">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}</p>
                           <p className="text-xs font-bold text-indigo-500 uppercase">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.specialty}</p>
-                          <p className="text-xs text-slate-400 mt-4">Emisión: <span className="text-indigo-600 font-bold">{new Date().toLocaleDateString('es-MX')}</span></p>
+                          <div className="mt-4 pt-4 border-t border-slate-50">
+                             <p className="text-[10px] text-slate-400">Recepción: <span className="text-slate-700 font-bold">{selectedRecordForReport.receptionDate}</span></p>
+                             <p className="text-[10px] text-slate-400">Emisión: <span className="text-indigo-600 font-bold">{new Date().toLocaleDateString('es-MX')}</span></p>
+                          </div>
                        </div>
                     </div>
                     <div className="mb-10 p-6 bg-indigo-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
@@ -958,10 +988,10 @@ const App: React.FC = () => {
                        </table>
                     </div>
                     <div className="mt-auto pt-20 grid grid-cols-2 gap-20">
-                       <p className="text-[10px] text-slate-400 italic font-medium leading-relaxed">Certificado emitido electrónicamente. Los resultados son definitivos para la muestra bajo estudio.</p>
+                       <p className="text-[10px] text-slate-400 italic font-medium leading-relaxed">Certificado emitido electrónicamente. Los resultados son definitivos para la muestra bajo estudio en las condiciones recibidas.</p>
                        <div className="flex flex-col items-center"><div className="w-full border-b-2 border-slate-300 mb-2"></div><p className="text-xs font-black text-slate-800 uppercase tracking-widest">Firma Autorizada</p></div>
                     </div>
-                    <div className="mt-10 pt-8 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex justify-between uppercase"><span>LabSync Pro ERP</span><span>ISO 9001:2015</span></div>
+                    <div className="mt-10 pt-8 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex justify-between uppercase"><span>LabSync Pro ERP Cloud</span><span>ISO 9001:2015</span></div>
                 </div>
              </div>
           </div>
