@@ -6,12 +6,12 @@ import {
   Users, 
   Beaker, 
   ClipboardList, 
-  UserSquare2, 
+  User as UserIcon, 
   TrendingUp, 
   Plus, 
   Search, 
   DollarSign, 
-  CheckCircle2, 
+  CheckCircle, 
   Trash2,
   Calendar,
   X,
@@ -55,6 +55,13 @@ import {
   AreaChart, 
   Area
 } from 'recharts';
+
+// Definición para evitar errores de compilación con librerías externas
+declare global {
+  interface Window {
+    html2pdf: any;
+  }
+}
 
 // --- Tipos ---
 type Status = 'Pending' | 'In Progress' | 'Completed';
@@ -145,7 +152,7 @@ const App: React.FC = () => {
   
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(false); // Modal de reporte
+  const [showReportModal, setShowReportModal] = useState(false);
   const [showClientModal, setShowClientModal] = useState(false);
   const [showTechModal, setShowTechModal] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
@@ -157,9 +164,8 @@ const App: React.FC = () => {
   const [analyses, setAnalyses] = useState<AnalysisRecord[]>(() => JSON.parse(localStorage.getItem('lab_analyses') || '[]'));
   const [products, setProducts] = useState<string[]>(() => JSON.parse(localStorage.getItem('lab_products') || JSON.stringify(BASE_PRODUCT_LIST)));
   
-  // Estado para la muestra seleccionada
   const [selectedRecordForResults, setSelectedRecordForResults] = useState<AnalysisRecord | null>(null);
-  const [selectedRecordForReport, setSelectedRecordForReport] = useState<AnalysisRecord | null>(null); // Registro para reporte
+  const [selectedRecordForReport, setSelectedRecordForReport] = useState<AnalysisRecord | null>(null);
   const [currentResults, setCurrentResults] = useState<Record<string, string>>({});
 
   const [newAnalysis, setNewAnalysis] = useState<Partial<AnalysisRecord>>({
@@ -193,7 +199,6 @@ const App: React.FC = () => {
     localStorage.setItem('lab_google_url', googleUrl);
   }, [clients, techs, types, analyses, products, googleUrl]);
 
-  // Estilos de impresión dinámica
   const printStyles = `
     @media print {
       body * {
@@ -216,7 +221,6 @@ const App: React.FC = () => {
       .no-print {
         display: none !important;
       }
-      /* Asegurar impresión de colores de fondo en Webkit */
       * {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
@@ -259,40 +263,21 @@ const App: React.FC = () => {
     }
   };
 
-  const testConnection = async () => {
-    if (!googleUrl) {
-      alert("Por favor, ingresa una URL primero.");
-      return;
-    }
-    const testData = {
-      "Folio": "TEST-000",
-      "Muestra": "PRUEBA DE CONEXIÓN",
-      "Producto": "SISTEMA",
-      "Estatus": "Verified",
-      "Fecha Recepción": new Date().toLocaleDateString()
-    };
-    alert("Enviando señal de prueba... Si la URL es correcta, aparecerá una fila 'TEST-000' en tu hoja de Google en unos segundos.");
-    syncWithGoogle(testData);
-  };
-
   const handleOpenResults = (record: AnalysisRecord) => {
       setSelectedRecordForResults(record);
       setCurrentResults(record.results || {});
       setShowResultsModal(true);
   };
 
-  // Función para abrir el reporte
   const handleOpenReport = (record: AnalysisRecord) => {
     setSelectedRecordForReport(record);
     setShowReportModal(true);
   };
 
-  // Función para descargar PDF
   const handleDownloadPDF = () => {
     if (!selectedRecordForReport) return;
     const element = document.getElementById('report-preview');
     
-    // Configuración para html2pdf
     const opt = {
       margin:       0,
       filename:     `Certificado_${selectedRecordForReport.sampleId}.pdf`,
@@ -301,12 +286,10 @@ const App: React.FC = () => {
       jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    // @ts-ignore
     if (window.html2pdf) {
-        // @ts-ignore
         window.html2pdf().set(opt).from(element).save();
     } else {
-        alert("La librería de generación de PDF aún no está lista. Intenta de nuevo en unos segundos.");
+        alert("La librería de generación de PDF aún no está lista.");
     }
   };
 
@@ -325,7 +308,6 @@ const App: React.FC = () => {
       const selectedClient = clients.find(c => c.id === updatedRecord.clientId);
       const selectedTech = techs.find(t => t.id === updatedRecord.technicianId);
       
-      // Preparar Payload para Google Sheets
       const formattedPayload: Record<string, string | number> = {
          "Folio": updatedRecord.sampleId,
          "Muestra": updatedRecord.sampleName,
@@ -339,7 +321,6 @@ const App: React.FC = () => {
          "Costo": updatedRecord.cost
       };
 
-      // Agregar resultados dinámicos
       types.forEach(type => {
           if (currentResults[type.id]) {
               formattedPayload[type.name] = currentResults[type.id];
@@ -367,15 +348,16 @@ const App: React.FC = () => {
     const selectedTech = techs.find(t => t.id === newAnalysis.technicianId);
     
     const record: AnalysisRecord = {
-      ...newAnalysis as AnalysisRecord,
+      ...(newAnalysis as Required<Omit<AnalysisRecord, 'id' | 'results' | 'comments'>>),
       id: `a${Date.now()}`,
-    };
+      results: {},
+      comments: ""
+    } as AnalysisRecord;
 
     setAnalyses([record, ...analyses]);
     setShowAnalysisModal(false);
 
     if (googleUrl) {
-       // Preparar Payload para Google Sheets
        const formattedPayload: Record<string, string | number> = {
           "Folio": record.sampleId,
           "Muestra": record.sampleName,
@@ -390,7 +372,6 @@ const App: React.FC = () => {
           "Lista Análisis": types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => t.name).join(', ')
        };
        
-       // Marcar columnas de análisis solicitados
        types.forEach(type => {
           if ((record.analysisIds || []).includes(type.id)) {
              formattedPayload[type.name] = "SOLICITADO";
@@ -482,7 +463,7 @@ const App: React.FC = () => {
             {renderSidebarItem('dashboard', <LayoutDashboard size={20} />, 'Dashboard')}
             {renderSidebarItem('analysis', <ClipboardList size={20} />, 'Ingreso Muestras')}
             {renderSidebarItem('clients', <Users size={20} />, 'Clientes')}
-            {renderSidebarItem('techs', <UserSquare2 size={20} />, 'Técnicos')}
+            {renderSidebarItem('techs', <UserIcon size={20} />, 'Técnicos')}
             {renderSidebarItem('types', <Boxes size={20} />, 'Catálogo')}
             <div className="pt-4 border-t border-slate-800 mt-4">
                {renderSidebarItem('settings', <Settings size={20} />, 'Configuración')}
@@ -507,7 +488,7 @@ const App: React.FC = () => {
                   <span className="text-[10px] font-bold uppercase">{syncStatus === 'success' ? 'Enviado OK' : syncStatus === 'error' ? 'Error URL' : 'Sheets Conectado'}</span>
                </div>
              )}
-             <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded">V 2.2 Reports</span>
+             <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded">V 2.3 Stable</span>
           </div>
         </header>
 
@@ -519,7 +500,7 @@ const App: React.FC = () => {
                  { label: 'Facturación Acum.', value: `$${stats.totalRevenue.toLocaleString()}`, icon: <DollarSign className="text-green-600"/>, bg: 'bg-green-50' },
                  { label: 'Muestras Totales', value: analyses.length, icon: <ClipboardList className="text-indigo-600"/>, bg: 'bg-indigo-50' },
                  { label: 'Ingresos Pendientes', value: analyses.filter(a => a.status === 'Pending').length, icon: <Clock className="text-orange-600"/>, bg: 'bg-orange-50' },
-                 { label: 'Eficiencia Lab', value: `${analyses.length > 0 ? Math.round((stats.completedTests/analyses.length)*100) : 0}%`, icon: <CheckCircle2 className="text-blue-600"/>, bg: 'bg-blue-50' },
+                 { label: 'Eficiencia Lab', value: `${analyses.length > 0 ? Math.round((stats.completedTests/analyses.length)*100) : 0}%`, icon: <CheckCircle className="text-blue-600"/>, bg: 'bg-blue-50' },
                ].map((card, i) => (
                  <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                    <div className="flex justify-between items-start mb-4">
@@ -573,7 +554,7 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Bitácora de Recepción</h3>
-                  <p className="text-slate-500 text-sm">Registro técnico de ingreso de materias primas con trazabilidad completa.</p>
+                  <p className="text-slate-500 text-sm">Registro técnico de ingreso de materias primas.</p>
                 </div>
                 <button onClick={() => setShowAnalysisModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
                   <Plus size={20} /> Registrar Muestra
@@ -585,9 +566,9 @@ const App: React.FC = () => {
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
                         <th className="px-6 py-4">Muestra / Producto</th>
-                        <th className="px-6 py-4">Procedencia / Trazabilidad</th>
+                        <th className="px-6 py-4">Procedencia</th>
                         <th className="px-6 py-4">Cliente / Folio</th>
-                        <th className="px-6 py-4">Análisis Solicitados</th>
+                        <th className="px-6 py-4">Análisis</th>
                         <th className="px-6 py-4">Tiempos</th>
                         <th className="px-6 py-4 text-center">Prioridad</th>
                         <th className="px-6 py-4">Estado</th>
@@ -631,7 +612,7 @@ const App: React.FC = () => {
                                       );
                                     })
                                 ) : (
-                                    <span className="text-xs text-slate-400 italic">Sin análisis esp.</span>
+                                    <span className="text-xs text-slate-400 italic">Sin análisis</span>
                                 )}
                              </div>
                              <div className="mt-1 text-xs text-slate-500">
@@ -675,7 +656,6 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Cartera de Clientes</h3>
-                  <p className="text-slate-500 text-sm">Gestiona la información de contacto y facturación.</p>
                 </div>
                 <button onClick={() => setShowClientModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
                   <Plus size={20} /> Nuevo Cliente
@@ -693,7 +673,7 @@ const App: React.FC = () => {
                     <h4 className="font-bold text-slate-800 text-lg mb-1">{client.name}</h4>
                     <p className="text-sm text-slate-500 mb-4">{client.address}</p>
                     <div className="space-y-2 pt-4 border-t border-slate-100">
-                      <div className="flex items-center gap-2 text-sm text-slate-600"><User size={14} className="text-indigo-400"/> {client.contactName}</div>
+                      <div className="flex items-center gap-2 text-sm text-slate-600"><UserIcon size={14} className="text-indigo-400"/> {client.contactName}</div>
                       <div className="flex items-center gap-2 text-sm text-slate-600"><Mail size={14} className="text-indigo-400"/> {client.email}</div>
                       <div className="flex items-center gap-2 text-sm text-slate-600"><Phone size={14} className="text-indigo-400"/> {client.phone}</div>
                     </div>
@@ -708,7 +688,6 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Equipo Técnico</h3>
-                  <p className="text-slate-500 text-sm">Especialistas asignados a pruebas de laboratorio.</p>
                 </div>
                 <button onClick={() => setShowTechModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
                   <Plus size={20} /> Registrar Técnico
@@ -745,7 +724,6 @@ const App: React.FC = () => {
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                       <div>
                         <h3 className="text-xl font-bold text-slate-900">Catálogo de Pruebas</h3>
-                        <p className="text-slate-500 text-sm">Define costos base y unidades de medida.</p>
                       </div>
                       <button onClick={() => setShowTypeModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
                         <Plus size={20} /> Nueva Prueba
@@ -771,7 +749,6 @@ const App: React.FC = () => {
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                       <div>
                         <h3 className="text-xl font-bold text-slate-900">Productos Estándar</h3>
-                        <p className="text-slate-500 text-sm">Lista autocompletada para ingreso rápido.</p>
                       </div>
                       <button onClick={() => setShowProductModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
                         <Plus size={20} /> Nuevo Producto
@@ -798,36 +775,17 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-4 mb-8">
                   <div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div>
                   <div>
-                    <h3 className="text-xl font-bold text-slate-900">Verificar Conexión Google Drive</h3>
-                    <p className="text-slate-500 text-sm">Asegúrate de que la URL de tu script sea correcta para evitar pérdida de datos.</p>
+                    <h3 className="text-xl font-bold text-slate-900">Configuración de Sincronización</h3>
                   </div>
                 </div>
 
                 <div className="space-y-6">
-                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-indigo-600 mb-4">Instrucciones de Conexión</h4>
-                    <ul className="text-sm text-slate-600 space-y-3">
-                      <li className="flex gap-3">
-                        <span className="bg-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs border border-slate-200 shrink-0">1</span>
-                        Crea una hoja de cálculo en tu Google Drive.
-                      </li>
-                      <li className="flex gap-3">
-                        <span className="bg-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs border border-slate-200 shrink-0">2</span>
-                        Ve a <span className="font-bold text-slate-900">Extensiones > Apps Script</span> y pega el código del servidor.
-                      </li>
-                      <li className="flex gap-3">
-                        <span className="bg-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs border border-slate-200 shrink-0">3</span>
-                        Implementa como <span className="font-bold text-slate-900">Aplicación Web</span> con acceso para <span className="font-bold text-slate-900">"Cualquiera"</span>.
-                      </li>
-                      <li className="flex gap-3 bg-yellow-50 p-2 rounded-lg border border-yellow-200">
-                        <span className="bg-yellow-400 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0"><ShieldAlert size={12}/></span>
-                        <span className="text-yellow-800">Si aparece <strong>"Google hasn't verified this app"</strong>, haz clic en <strong className="text-yellow-900">Configuración avanzada (Advanced)</strong> &gt; <strong className="text-yellow-900">Ir a ... (no seguro)</strong>. Es seguro porque tú eres el autor.</span>
-                      </li>
-                    </ul>
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-sm text-slate-600 space-y-3">
+                    <p>Pega aquí la URL de tu Google Apps Script para sincronizar los datos automáticamente con tu hoja de cálculo.</p>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 ml-1">URL de Implementación (debe terminar en /exec)</label>
+                    <label className="text-xs font-bold text-slate-500 ml-1">URL de Implementación</label>
                     <div className="flex gap-3">
                       <input 
                         type="text" 
@@ -837,10 +795,10 @@ const App: React.FC = () => {
                         onChange={(e) => setGoogleUrl(e.target.value)}
                       />
                       <button 
-                        onClick={() => alert("URL guardada en este navegador.")}
+                        onClick={() => alert("URL guardada.")}
                         className="px-6 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg transition-all"
                       >
-                        Guardar URL
+                        Guardar
                       </button>
                     </div>
                   </div>
@@ -850,17 +808,12 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* --- MODALES --- */}
-
-        {/* Modal Análisis (Ingreso Inicial) */}
+        {/* MODALES */}
         {showAnalysisModal && (
           <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in">
               <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <div>
-                  <h3 className="text-2xl font-bold text-slate-900">Ingreso de Muestra</h3>
-                  <p className="text-slate-500 text-sm">Selecciona múltiples análisis si es necesario.</p>
-                </div>
+                <h3 className="text-2xl font-bold text-slate-900">Ingreso de Muestra</h3>
                 <button onClick={() => setShowAnalysisModal(false)} className="p-3 hover:bg-white rounded-2xl text-slate-400"><X size={24} /></button>
               </div>
               <form onSubmit={handleSubmitAnalysis} className="p-10 space-y-8 overflow-y-auto max-h-[75vh]">
@@ -871,7 +824,6 @@ const App: React.FC = () => {
                   </select>
                 </div>
                 
-                {/* --- SECCIÓN FECHAS --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="relative">
                       <span className="absolute left-4 top-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha Recepción</span>
@@ -884,39 +836,23 @@ const App: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="relative">
-                    <Globe className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input type="text" placeholder="Origen" className="w-full pl-11 pr-5 py-3.5 rounded-2xl border" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
-                  </div>
-                  <div className="relative">
-                    <Truck className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input type="text" placeholder="Proveedor" className="w-full pl-11 pr-5 py-3.5 rounded-2xl border" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <input type="text" placeholder="Lote" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
                    <input type="text" required placeholder="ID Folio *" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.sampleId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleId: e.target.value})} />
                 </div>
                 
-                {/* --- Cliente y Técnico --- */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <select required className="w-full px-5 py-3.5 rounded-2xl border bg-white" value={newAnalysis.clientId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
                     <option value="">Cliente...</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  
                   <select className="w-full px-5 py-3.5 rounded-2xl border bg-white" value={newAnalysis.technicianId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, technicianId: e.target.value})}>
                     <option value="">Asignar Técnico...</option>
                     {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
 
-                {/* --- SELECCIÓN MÚLTIPLE DE ANÁLISIS --- */}
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                    <h4 className="font-bold text-slate-700 mb-4 flex items-center justify-between">
-                        <span>Selecciona los Análisis</span>
-                        <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">{(newAnalysis.analysisIds || []).length} seleccionados</span>
-                    </h4>
+                    <h4 className="font-bold text-slate-700 mb-4">Selecciona Análisis</h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {types.map(t => {
                             const isSelected = (newAnalysis.analysisIds || []).includes(t.id);
@@ -925,14 +861,11 @@ const App: React.FC = () => {
                                     key={t.id} 
                                     type="button"
                                     onClick={() => toggleAnalysisSelection(t.id, t.baseCost)}
-                                    className={`text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md transform scale-[1.02]' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}
+                                    className={`text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}
                                 >
-                                    <div className={`mt-0.5 ${isSelected ? 'text-indigo-200' : 'text-slate-300'}`}>
-                                        {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                    </div>
                                     <div>
-                                        <div className="font-bold text-sm leading-tight">{t.name}</div>
-                                        <div className={`text-[10px] mt-1 ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>${t.baseCost} / {t.unit}</div>
+                                        <div className="font-bold text-sm">{t.name}</div>
+                                        <div className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>${t.baseCost} / {t.unit}</div>
                                     </div>
                                 </button>
                             )
@@ -940,26 +873,14 @@ const App: React.FC = () => {
                     </div>
                 </div>
 
-                {/* --- Costo Total --- */}
-                <div className="flex justify-end items-center gap-4 bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                  <span className="text-slate-600 font-medium">Costo Total Estimado:</span>
-                  <div className="relative w-40">
-                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500" size={18} />
-                    <input 
-                      type="number" 
-                      placeholder="Costo" 
-                      className="w-full pl-9 pr-4 py-2 rounded-xl border border-indigo-200 font-bold text-indigo-700 bg-white" 
-                      value={newAnalysis.cost || 0} 
-                      onChange={(e) => setNewAnalysis({...newAnalysis, cost: parseFloat(e.target.value)})} 
-                    />
-                  </div>
+                <div className="flex justify-end items-center gap-4 bg-indigo-50 p-4 rounded-xl">
+                  <span className="text-slate-600 font-medium">Costo Estimado: ${newAnalysis.cost || 0}</span>
                 </div>
 
                 <div className="pt-6 flex gap-4">
                   <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl">Cancelar</button>
-                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                    {isSyncing ? <RefreshCw size={20} className="animate-spin" /> : null}
-                    {isSyncing ? 'Sincronizando...' : 'Confirmar e Ingresar'}
+                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">
+                    {isSyncing ? 'Sincronizando...' : 'Confirmar Ingreso'}
                   </button>
                 </div>
               </form>
@@ -967,235 +888,87 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Modal Captura de Resultados */}
         {showResultsModal && selectedRecordForResults && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
                     <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
-                        <div>
-                            <h3 className="text-xl font-bold">Captura de Resultados</h3>
-                            <p className="text-indigo-200 text-sm">Muestra: {selectedRecordForResults.sampleName} ({selectedRecordForResults.sampleId})</p>
-                        </div>
+                        <h3 className="text-xl font-bold">Captura de Resultados</h3>
                         <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-indigo-500 rounded-xl text-indigo-100"><X size={20} /></button>
                     </div>
                     <form onSubmit={handleSaveResults} className="p-8 space-y-6">
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
-                            <p className="text-sm text-slate-500 mb-1">Producto: <span className="font-bold text-slate-700">{selectedRecordForResults.product}</span></p>
-                            <p className="text-sm text-slate-500">Técnico Responsable: <span className="font-bold text-slate-700">{techs.find(t => t.id === selectedRecordForResults.technicianId)?.name}</span></p>
-                        </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
-                                <div key={type.id} className="relative">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">{type.name}</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="text" 
-                                            placeholder="0.00" 
-                                            autoFocus={types.filter(t => selectedRecordForResults.analysisIds.includes(t.id))[0].id === type.id}
-                                            className="w-full pl-4 pr-12 py-3 rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all font-bold text-slate-700 text-lg"
-                                            value={currentResults[type.id] || ''}
-                                            onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})}
-                                        />
-                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-medium text-sm">{type.unit}</span>
-                                    </div>
+                                <div key={type.id}>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{type.name} ({type.unit})</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none"
+                                        value={currentResults[type.id] || ''}
+                                        onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})}
+                                    />
                                 </div>
                             ))}
                         </div>
-
-                        <div className="pt-6 flex gap-4 border-t border-slate-100 mt-4">
-                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl hover:bg-slate-50">Cancelar</button>
-                            <button type="submit" disabled={isSyncing} className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                                {isSyncing ? <RefreshCw size={20} className="animate-spin" /> : <Save size={20} />}
-                                {isSyncing ? 'Guardando...' : 'Guardar Resultados'}
-                            </button>
+                        <div className="pt-6 flex gap-4">
+                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cancelar</button>
+                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl">Guardar Resultados</button>
                         </div>
                     </form>
                 </div>
             </div>
         )}
 
-        {/* Modal REPORTE PDF */}
         {showReportModal && selectedRecordForReport && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 overflow-y-auto">
-             {/* Botones de acción FLOTANTES (Siempre visibles y fuera del flujo del documento) */}
              <div className="fixed top-6 right-6 flex flex-col sm:flex-row gap-3 no-print z-[60]">
-                <button onClick={handleDownloadPDF} className="bg-green-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-green-700 flex items-center justify-center gap-2 transform hover:scale-105 transition-all">
-                  <Download size={20} /> <span className="inline">Descargar</span>
+                <button onClick={handleDownloadPDF} className="bg-green-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-green-700 flex items-center gap-2">
+                  <Download size={20} /> Descargar
                 </button>
-                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-indigo-700 flex items-center justify-center gap-2 transform hover:scale-105 transition-all">
-                  <Printer size={20} /> <span className="inline">Imprimir</span>
+                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-indigo-700 flex items-center gap-2">
+                  <Printer size={20} /> Imprimir
                 </button>
-                <button onClick={() => setShowReportModal(false)} className="bg-white text-slate-700 px-5 py-3 rounded-full font-bold shadow-xl hover:bg-slate-100 flex items-center justify-center gap-2 transform hover:scale-105 transition-all border border-slate-200">
-                  <X size={20} /> <span className="inline">Cerrar</span>
+                <button onClick={() => setShowReportModal(false)} className="bg-white text-slate-700 px-5 py-3 rounded-full font-bold shadow-xl border border-slate-200 flex items-center gap-2">
+                  <X size={20} /> Cerrar
                 </button>
              </div>
 
              <div className="flex min-h-full items-center justify-center p-4 py-20">
-                <div id="report-preview" className="bg-white w-full max-w-[21cm] min-h-[29.7cm] shadow-2xl relative p-12 text-slate-800 mx-auto">
-                    {/* Encabezado */}
+                <div id="report-preview" className="bg-white w-full max-w-[21cm] min-h-[29.7cm] shadow-2xl p-12 text-slate-800">
                     <div className="flex justify-between items-end border-b-2 border-indigo-600 pb-6 mb-8">
                        <div>
-                          <h1 className="text-4xl font-bold text-slate-900 tracking-tight mb-2">LabSync <span className="text-indigo-600">Pro</span></h1>
+                          <h1 className="text-4xl font-bold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1>
                           <p className="text-sm text-slate-500">Servicios Analíticos de Precisión</p>
-                          <p className="text-sm text-slate-500">Calle Industrial 123, Ciudad Innovación</p>
-                          <p className="text-sm text-slate-500">Tel: (555) 123-4567 | contacto@labsync.com</p>
                        </div>
                        <div className="text-right">
-                          <h2 className="text-2xl font-bold text-slate-800">CERTIFICADO DE ANÁLISIS</h2>
-                          <p className="text-sm text-slate-500 mt-1">Folio: <span className="font-mono font-bold text-slate-700">{selectedRecordForReport.sampleId}</span></p>
-                          <p className="text-sm text-slate-500">Fecha Emisión: {new Date().toLocaleDateString()}</p>
+                          <h2 className="text-2xl font-bold text-slate-800">CERTIFICADO</h2>
+                          <p className="text-sm">Folio: {selectedRecordForReport.sampleId}</p>
                        </div>
                     </div>
-
-                    {/* Datos del Cliente y Muestra */}
-                    <div className="grid grid-cols-2 gap-12 mb-10">
-                       <div>
-                          <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-3 border-b border-slate-100 pb-1">Información del Cliente</h3>
-                          <div className="space-y-1 text-sm">
-                             <p><span className="font-bold text-slate-700">Cliente:</span> {clients.find(c => c.id === selectedRecordForReport.clientId)?.name}</p>
-                             <p><span className="font-bold text-slate-700">Dirección:</span> {clients.find(c => c.id === selectedRecordForReport.clientId)?.address}</p>
-                             <p><span className="font-bold text-slate-700">Contacto:</span> {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName}</p>
-                          </div>
-                       </div>
-                       <div>
-                          <h3 className="text-xs font-bold text-indigo-600 uppercase tracking-widest mb-3 border-b border-slate-100 pb-1">Detalles de la Muestra</h3>
-                          <div className="space-y-1 text-sm">
-                             <p><span className="font-bold text-slate-700">Producto:</span> {selectedRecordForReport.product}</p>
-                             <p><span className="font-bold text-slate-700">Identificación:</span> {selectedRecordForReport.sampleName}</p>
-                             <p><span className="font-bold text-slate-700">Lote:</span> {selectedRecordForReport.batch || 'N/A'}</p>
-                             <p><span className="font-bold text-slate-700">Fecha Recepción:</span> {selectedRecordForReport.receptionDate}</p>
-                          </div>
-                       </div>
-                    </div>
-
-                    {/* Tabla de Resultados */}
                     <div className="mb-12">
-                       <h3 className="text-lg font-bold text-slate-800 mb-4">Resultados Analíticos</h3>
+                       <h3 className="text-lg font-bold text-slate-800 mb-4">Resultados</h3>
                        <table className="w-full text-left border-collapse">
                           <thead>
-                             <tr className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider">
-                                <th className="px-4 py-3 border-b border-slate-200">Parámetro</th>
-                                <th className="px-4 py-3 border-b border-slate-200 text-right">Resultado</th>
-                                <th className="px-4 py-3 border-b border-slate-200 pl-6">Unidad</th>
-                                <th className="px-4 py-3 border-b border-slate-200 text-right">Método (Ref)</th>
+                             <tr className="bg-slate-100 text-slate-600 text-xs">
+                                <th className="px-4 py-3 border-b">Parámetro</th>
+                                <th className="px-4 py-3 border-b text-right">Resultado</th>
+                                <th className="px-4 py-3 border-b pl-6">Unidad</th>
                              </tr>
                           </thead>
                           <tbody>
-                             {types.filter(t => selectedRecordForReport.analysisIds.includes(t.id)).map((type, idx) => (
-                                <tr key={type.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                                   <td className="px-4 py-3 border-b border-slate-100 font-bold text-slate-700">{type.name}</td>
-                                   <td className="px-4 py-3 border-b border-slate-100 text-right font-mono text-slate-800">
-                                      {selectedRecordForReport.results?.[type.id] || '---'}
-                                   </td>
-                                   <td className="px-4 py-3 border-b border-slate-100 pl-6 text-slate-500 text-sm">{type.unit}</td>
-                                   <td className="px-4 py-3 border-b border-slate-100 text-right text-xs text-slate-400">Interno / AOAC</td>
+                             {types.filter(t => selectedRecordForReport.analysisIds.includes(t.id)).map((type) => (
+                                <tr key={type.id}>
+                                   <td className="px-4 py-3 border-b font-bold">{type.name}</td>
+                                   <td className="px-4 py-3 border-b text-right font-mono">{selectedRecordForReport.results?.[type.id] || '---'}</td>
+                                   <td className="px-4 py-3 border-b pl-6 text-slate-500">{type.unit}</td>
                                 </tr>
                              ))}
                           </tbody>
                        </table>
                     </div>
-
-                    {/* Pie de página y Firmas */}
-                    <div className="mt-20">
-                       <div className="grid grid-cols-2 gap-20">
-                          <div className="text-center">
-                             <div className="border-t border-slate-300 w-2/3 mx-auto pt-2"></div>
-                             <p className="font-bold text-slate-700 text-sm">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name || 'Laboratorio Central'}</p>
-                             <p className="text-xs text-slate-500">Analista Responsable</p>
-                          </div>
-                          <div className="text-center">
-                             <div className="border-t border-slate-300 w-2/3 mx-auto pt-2"></div>
-                             <p className="font-bold text-slate-700 text-sm">Gerencia Técnica</p>
-                             <p className="text-xs text-slate-500">Aprobado por</p>
-                          </div>
-                       </div>
-                       <div className="mt-12 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-4">
-                          <p>Este informe se refiere exclusivamente a la muestra analizada. Prohibida la reproducción parcial o total sin autorización. LabSync Pro Software.</p>
-                       </div>
-                    </div>
                 </div>
              </div>
           </div>
         )}
-
-        {/* Modal Cliente */}
-        {showClientModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in">
-              <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <h3 className="text-xl font-bold text-slate-900">Nuevo Cliente</h3>
-                <button onClick={() => setShowClientModal(false)} className="p-2 hover:bg-white rounded-xl text-slate-400"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveClient} className="p-8 space-y-4">
-                <input type="text" required placeholder="Nombre Empresa *" className="w-full px-5 py-3 rounded-2xl border" value={newClient.name || ''} onChange={e => setNewClient({...newClient, name: e.target.value})} />
-                <input type="text" placeholder="Dirección" className="w-full px-5 py-3 rounded-2xl border" value={newClient.address || ''} onChange={e => setNewClient({...newClient, address: e.target.value})} />
-                <input type="text" placeholder="Nombre Contacto" className="w-full px-5 py-3 rounded-2xl border" value={newClient.contactName || ''} onChange={e => setNewClient({...newClient, contactName: e.target.value})} />
-                <div className="grid grid-cols-2 gap-4">
-                   <input type="email" placeholder="Email" className="w-full px-5 py-3 rounded-2xl border" value={newClient.email || ''} onChange={e => setNewClient({...newClient, email: e.target.value})} />
-                   <input type="tel" placeholder="Teléfono" className="w-full px-5 py-3 rounded-2xl border" value={newClient.phone || ''} onChange={e => setNewClient({...newClient, phone: e.target.value})} />
-                </div>
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-2xl mt-4 hover:bg-indigo-700">Guardar Cliente</button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Técnico */}
-        {showTechModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in">
-              <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <h3 className="text-xl font-bold text-slate-900">Nuevo Técnico</h3>
-                <button onClick={() => setShowTechModal(false)} className="p-2 hover:bg-white rounded-xl text-slate-400"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveTech} className="p-8 space-y-4">
-                <input type="text" required placeholder="Nombre Completo *" className="w-full px-5 py-3 rounded-2xl border" value={newTech.name || ''} onChange={e => setNewTech({...newTech, name: e.target.value})} />
-                <input type="text" placeholder="Especialidad (ej. Bromatología)" className="w-full px-5 py-3 rounded-2xl border" value={newTech.specialty || ''} onChange={e => setNewTech({...newTech, specialty: e.target.value})} />
-                <input type="email" placeholder="Email" className="w-full px-5 py-3 rounded-2xl border" value={newTech.email || ''} onChange={e => setNewTech({...newTech, email: e.target.value})} />
-                <input type="tel" placeholder="Teléfono" className="w-full px-5 py-3 rounded-2xl border" value={newTech.phone || ''} onChange={e => setNewTech({...newTech, phone: e.target.value})} />
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-2xl mt-4 hover:bg-indigo-700">Guardar Técnico</button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Tipo Análisis */}
-        {showTypeModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden animate-in">
-              <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <h3 className="text-xl font-bold text-slate-900">Nueva Prueba</h3>
-                <button onClick={() => setShowTypeModal(false)} className="p-2 hover:bg-white rounded-xl text-slate-400"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveType} className="p-8 space-y-4">
-                <input type="text" required placeholder="Nombre Análisis *" className="w-full px-5 py-3 rounded-2xl border" value={newType.name || ''} onChange={e => setNewType({...newType, name: e.target.value})} />
-                <div className="grid grid-cols-2 gap-4">
-                  <input type="number" placeholder="Costo Base ($)" className="w-full px-5 py-3 rounded-2xl border" value={newType.baseCost || ''} onChange={e => setNewType({...newType, baseCost: parseFloat(e.target.value)})} />
-                  <input type="text" placeholder="Unidad (%, ppb, etc)" className="w-full px-5 py-3 rounded-2xl border" value={newType.unit || ''} onChange={e => setNewType({...newType, unit: e.target.value})} />
-                </div>
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-2xl mt-4 hover:bg-indigo-700">Guardar Prueba</button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Modal Producto */}
-        {showProductModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden animate-in">
-              <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <h3 className="text-xl font-bold text-slate-900">Nuevo Producto</h3>
-                <button onClick={() => setShowProductModal(false)} className="p-2 hover:bg-white rounded-xl text-slate-400"><X size={20} /></button>
-              </div>
-              <form onSubmit={handleSaveProduct} className="p-8 space-y-4">
-                <input type="text" required placeholder="Nombre Producto *" className="w-full px-5 py-3 rounded-2xl border" value={newProduct} onChange={e => setNewProduct(e.target.value)} />
-                <button type="submit" className="w-full py-3 bg-indigo-600 text-white font-bold rounded-2xl mt-4 hover:bg-indigo-700">Agregar a Lista</button>
-              </form>
-            </div>
-          </div>
-        )}
-
       </main>
     </div>
   );
