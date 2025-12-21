@@ -42,7 +42,8 @@ import {
   FlaskConical,
   Save,
   Printer,
-  Download
+  Download,
+  CloudDownload
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -201,30 +202,11 @@ const App: React.FC = () => {
 
   const printStyles = `
     @media print {
-      body * {
-        visibility: hidden;
-      }
-      #report-preview, #report-preview * {
-        visibility: visible;
-      }
-      #report-preview {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        margin: 0;
-        padding: 20px;
-        background: white;
-        z-index: 9999;
-        box-shadow: none !important;
-      }
-      .no-print {
-        display: none !important;
-      }
-      * {
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-      }
+      body * { visibility: hidden; }
+      #report-preview, #report-preview * { visibility: visible; }
+      #report-preview { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 20px; background: white; z-index: 9999; box-shadow: none !important; }
+      .no-print { display: none !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
   `;
 
@@ -241,6 +223,88 @@ const App: React.FC = () => {
     }));
     return { totalRevenue, completedTests, clientStats, techStats };
   }, [analyses, clients, techs]);
+
+  // --- FUNCIÓN DE SINCRONIZACIÓN DE BAJADA (PULL) ---
+  const pullFromGoogle = async () => {
+    if (!googleUrl) {
+      alert("Por favor, configura la URL de Google Sheets en Configuración.");
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const response = await fetch(googleUrl);
+      const data = await response.json();
+      
+      if (Array.isArray(data)) {
+        const mergedAnalyses = [...analyses];
+        let updatedCount = 0;
+        let newCount = 0;
+
+        data.forEach((row: any) => {
+          if (!row.Folio) return;
+
+          const existingIndex = mergedAnalyses.findIndex(a => a.sampleId === row.Folio.toString());
+          
+          // Mapeo de Estatus de Sheets a App
+          let mappedStatus: Status = 'Pending';
+          if (row.Estatus === 'Completado') mappedStatus = 'Completed';
+          if (row.Estatus === 'En Proceso') mappedStatus = 'In Progress';
+
+          // Reconstruir Resultados
+          const results: Record<string, string> = {};
+          types.forEach(t => {
+            if (row[t.name] && row[t.name] !== "[SOLICITADO]") {
+              results[t.id] = row[t.name].toString();
+            }
+          });
+
+          // Buscar IDs de Análisis solicitados (si están marcados o tienen resultados)
+          const analysisIds: string[] = [];
+          types.forEach(t => {
+             if (row[t.name]) analysisIds.push(t.id);
+          });
+
+          const newRecord: AnalysisRecord = {
+            id: existingIndex !== -1 ? mergedAnalyses[existingIndex].id : `ext_${Date.now()}_${row.Folio}`,
+            sampleId: row.Folio.toString(),
+            sampleName: row.Muestra || "Muestra Importada",
+            product: row.Producto || "General",
+            origin: row.Procedencia || row.Origen || "",
+            provider: row.Proveedor || "",
+            batch: row.Lote || "",
+            clientId: clients.find(c => c.name === row.Cliente)?.id || (clients[0]?.id || ""),
+            technicianId: techs.find(t => t.name === row.Técnico)?.id || (techs[0]?.id || ""),
+            analysisIds: analysisIds,
+            results: results,
+            receptionDate: row["Fecha Recepción"] || new Date().toISOString().split('T')[0],
+            deliveryDate: row["Fecha Entrega"] || new Date().toISOString().split('T')[0],
+            priority: row.Prioridad || 'Normal',
+            cost: parseFloat(row.Costo) || 0,
+            status: mappedStatus
+          };
+
+          if (existingIndex !== -1) {
+            mergedAnalyses[existingIndex] = newRecord;
+            updatedCount++;
+          } else {
+            mergedAnalyses.push(newRecord);
+            newCount++;
+          }
+        });
+
+        setAnalyses(mergedAnalyses);
+        setSyncStatus('success');
+        alert(`Sincronización completa:\n- ${newCount} nuevas muestras traídas.\n- ${updatedCount} muestras actualizadas.`);
+      }
+    } catch (error) {
+      console.error("Error al traer datos:", error);
+      setSyncStatus('error');
+      alert("Error al conectar con Google Sheets. Verifica la URL y los permisos.");
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setSyncStatus('idle'), 3000);
+    }
+  };
 
   const syncWithGoogle = async (data: any) => {
     if (!googleUrl) return;
@@ -277,20 +341,15 @@ const App: React.FC = () => {
   const handleDownloadPDF = () => {
     if (!selectedRecordForReport) return;
     const element = document.getElementById('report-preview');
-    
     const opt = {
-      margin:       0,
-      filename:     `Certificado_${selectedRecordForReport.sampleId}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      margin: 0,
+      filename: `Certificado_${selectedRecordForReport.sampleId}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
-
-    if (window.html2pdf) {
-        window.html2pdf().set(opt).from(element).save();
-    } else {
-        alert("La librería de generación de PDF aún no está lista.");
-    }
+    if (window.html2pdf) { window.html2pdf().set(opt).from(element).save(); } 
+    else { alert("La librería de generación de PDF aún no está lista."); }
   };
 
   const handleSaveResults = async (e: React.FormEvent) => {
@@ -305,26 +364,19 @@ const App: React.FC = () => {
 
       setAnalyses(analyses.map(a => a.id === updatedRecord.id ? updatedRecord : a));
       
-      const selectedClient = clients.find(c => c.id === updatedRecord.clientId);
-      const selectedTech = techs.find(t => t.id === updatedRecord.technicianId);
-      
-      // Payload optimizado para ACTUALIZACIÓN (Upsert)
       const formattedPayload: Record<string, string | number> = {
-         "Folio": updatedRecord.sampleId, // KEY única para buscar en Sheets
+         "Folio": updatedRecord.sampleId,
          "Estatus": "Completado",
          "Costo": updatedRecord.cost
       };
 
-      // Agregar resultados finales
       types.forEach(type => {
           if (currentResults[type.id]) {
               formattedPayload[type.name] = currentResults[type.id];
           }
       });
 
-      if (googleUrl) {
-          syncWithGoogle(formattedPayload);
-      }
+      if (googleUrl) { syncWithGoogle(formattedPayload); }
 
       setShowResultsModal(false);
       setSelectedRecordForResults(null);
@@ -351,7 +403,6 @@ const App: React.FC = () => {
     setShowAnalysisModal(false);
 
     if (googleUrl) {
-       // Payload optimizado para INGRESO (Upsert)
        const formattedPayload: Record<string, string | number> = {
           "Folio": record.sampleId,
           "Muestra": record.sampleName,
@@ -364,14 +415,11 @@ const App: React.FC = () => {
           "Estatus": "Pendiente",
           "Costo": record.cost
        };
-       
-       // Inicializar columnas de análisis solicitados con marca visual
        types.forEach(type => {
           if ((record.analysisIds || []).includes(type.id)) {
              formattedPayload[type.name] = "[SOLICITADO]";
           }
        });
-
       syncWithGoogle(formattedPayload);
     }
 
@@ -389,7 +437,6 @@ const App: React.FC = () => {
     const currentIds = newAnalysis.analysisIds || [];
     let newIds: string[];
     let newCost = newAnalysis.cost || 0;
-
     if (currentIds.includes(typeId)) {
       newIds = currentIds.filter(id => id !== typeId);
       newCost -= baseCost;
@@ -398,38 +445,6 @@ const App: React.FC = () => {
       newCost += baseCost;
     }
     setNewAnalysis({ ...newAnalysis, analysisIds: newIds, cost: Math.max(0, newCost) });
-  };
-
-  const handleSaveClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newClient.name) return;
-    setClients([...clients, { ...newClient, id: `c${Date.now()}` } as Client]);
-    setNewClient({});
-    setShowClientModal(false);
-  };
-
-  const handleSaveTech = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTech.name) return;
-    setTechs([...techs, { ...newTech, id: `t${Date.now()}` } as Technician]);
-    setNewTech({});
-    setShowTechModal(false);
-  };
-
-  const handleSaveType = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newType.name) return;
-    setTypes([...types, { ...newType, id: `at${Date.now()}` } as AnalysisType]);
-    setNewType({});
-    setShowTypeModal(false);
-  };
-
-  const handleSaveProduct = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProduct) return;
-    setProducts([...products, newProduct]);
-    setNewProduct('');
-    setShowProductModal(false);
   };
 
   const renderSidebarItem = (id: typeof activeTab, icon: React.ReactNode, label: string) => (
@@ -476,13 +491,20 @@ const App: React.FC = () => {
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10 shrink-0">
           <h2 className="text-xl font-semibold text-slate-800 capitalize">{activeTab}</h2>
           <div className="flex items-center space-x-4">
+             <button 
+                onClick={pullFromGoogle}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-all font-bold text-xs"
+             >
+                <CloudDownload size={16} />
+                {isSyncing ? 'Buscando...' : 'Sincronizar Todo'}
+             </button>
              {googleUrl && (
                <div className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${syncStatus === 'success' ? 'bg-green-100 text-green-700 border-green-200' : syncStatus === 'error' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-green-50 text-green-600 border-green-100'}`}>
                   {syncStatus === 'error' ? <AlertCircle size={14} /> : <Zap size={14} />}
                   <span className="text-[10px] font-bold uppercase">{syncStatus === 'success' ? 'Enviado OK' : syncStatus === 'error' ? 'Error URL' : 'Sheets Conectado'}</span>
                </div>
              )}
-             <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-1 rounded">V 2.4 Upsert</span>
           </div>
         </header>
 
@@ -550,9 +572,14 @@ const App: React.FC = () => {
                   <h3 className="text-xl font-bold text-slate-900">Bitácora de Recepción</h3>
                   <p className="text-slate-500 text-sm">Registro técnico de ingreso de materias primas.</p>
                 </div>
-                <button onClick={() => setShowAnalysisModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
-                  <Plus size={20} /> Registrar Muestra
-                </button>
+                <div className="flex gap-3">
+                   <button onClick={pullFromGoogle} className="bg-indigo-50 text-indigo-700 px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-100 transition-all font-bold">
+                      <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} /> Actualizar de Sheets
+                   </button>
+                   <button onClick={() => setShowAnalysisModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95 font-bold">
+                     <Plus size={20} /> Registrar Muestra
+                   </button>
+                </div>
               </div>
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
@@ -571,7 +598,7 @@ const App: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {analyses.length === 0 ? (
-                        <tr><td colSpan={8} className="px-6 py-20 text-center text-slate-400">No hay ingresos registrados.</td></tr>
+                        <tr><td colSpan={8} className="px-6 py-20 text-center text-slate-400">No hay ingresos registrados localmente. Sincroniza para traer datos.</td></tr>
                       ) : analyses.map(record => (
                         <tr key={record.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-6 py-4">
@@ -595,8 +622,7 @@ const App: React.FC = () => {
                           </td>
                           <td className="px-6 py-4">
                              <div className="flex flex-wrap gap-1 max-w-[200px]">
-                                {(record.analysisIds || []).length > 0 ? (
-                                    types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => {
+                                {types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => {
                                       const hasResult = record.results && record.results[t.id];
                                       return (
                                         <span key={t.id} className={`text-[10px] px-1.5 py-0.5 rounded border font-medium flex items-center gap-1 ${hasResult ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-100 text-indigo-700 border-indigo-200'}`}>
@@ -604,10 +630,7 @@ const App: React.FC = () => {
                                             {hasResult && <span className="font-bold">: {record.results![t.id]}</span>}
                                         </span>
                                       );
-                                    })
-                                ) : (
-                                    <span className="text-xs text-slate-400 italic">Sin análisis</span>
-                                )}
+                                })}
                              </div>
                              <div className="mt-1 text-xs text-slate-500">
                                 Técnico: {techs.find(t => t.id === record.technicianId)?.name || 'Sin Asignar'}
@@ -712,16 +735,11 @@ const App: React.FC = () => {
                   <button onClick={() => setCatalogTab('tests')} className={`px-6 py-2 rounded-xl font-bold transition-all ${catalogTab === 'tests' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}>Tipos de Análisis</button>
                   <button onClick={() => setCatalogTab('products')} className={`px-6 py-2 rounded-xl font-bold transition-all ${catalogTab === 'products' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-500 border border-slate-200'}`}>Productos Base</button>
                </div>
-
                {catalogTab === 'tests' ? (
                  <>
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-900">Catálogo de Pruebas</h3>
-                      </div>
-                      <button onClick={() => setShowTypeModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
-                        <Plus size={20} /> Nueva Prueba
-                      </button>
+                      <div><h3 className="text-xl font-bold text-slate-900">Catálogo de Pruebas</h3></div>
+                      <button onClick={() => setShowTypeModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"><Plus size={20} /> Nueva Prueba</button>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {types.map(type => (
@@ -741,12 +759,8 @@ const App: React.FC = () => {
                ) : (
                  <>
                    <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                      <div>
-                        <h3 className="text-xl font-bold text-slate-900">Productos Estándar</h3>
-                      </div>
-                      <button onClick={() => setShowProductModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95">
-                        <Plus size={20} /> Nuevo Producto
-                      </button>
+                      <div><h3 className="text-xl font-bold text-slate-900">Productos Estándar</h3></div>
+                      <button onClick={() => setShowProductModal(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"><Plus size={20} /> Nuevo Producto</button>
                     </div>
                     <div className="bg-white p-6 rounded-2xl border border-slate-200">
                        <div className="flex flex-wrap gap-3">
@@ -768,16 +782,12 @@ const App: React.FC = () => {
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div>
-                  <div>
-                    <h3 className="text-xl font-bold text-slate-900">Configuración de Sincronización</h3>
-                  </div>
+                  <div><h3 className="text-xl font-bold text-slate-900">Configuración de Sincronización</h3></div>
                 </div>
-
                 <div className="space-y-6">
                   <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 text-sm text-slate-600 space-y-3">
-                    <p>Pega aquí la URL de tu Google Apps Script para sincronizar los datos automáticamente con tu hoja de cálculo.</p>
+                    <p>Pega aquí la URL de tu Google Apps Script. Recuerda que la URL debe ser la de la "Implementación" (Deployment) más reciente.</p>
                   </div>
-
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-500 ml-1">URL de Implementación</label>
                     <div className="flex gap-3">
@@ -788,13 +798,17 @@ const App: React.FC = () => {
                         value={googleUrl}
                         onChange={(e) => setGoogleUrl(e.target.value)}
                       />
-                      <button 
-                        onClick={() => alert("URL guardada.")}
-                        className="px-6 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg transition-all"
-                      >
-                        Guardar
-                      </button>
+                      <button onClick={() => alert("URL guardada.")} className="px-6 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 shadow-lg transition-all">Guardar</button>
                     </div>
+                  </div>
+                  <div className="pt-6 border-t border-slate-100">
+                     <button 
+                        onClick={pullFromGoogle} 
+                        className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-black transition-all"
+                     >
+                        <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+                        Probar Conexión y Descargar Datos
+                     </button>
                   </div>
                 </div>
               </div>
@@ -802,7 +816,7 @@ const App: React.FC = () => {
           )}
         </div>
 
-        {/* MODALES */}
+        {/* MODAL INGRESO */}
         {showAnalysisModal && (
           <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in">
@@ -817,7 +831,6 @@ const App: React.FC = () => {
                     {products.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="relative">
                       <span className="absolute left-4 top-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha Recepción</span>
@@ -828,12 +841,10 @@ const App: React.FC = () => {
                       <input type="date" required className="w-full px-5 pt-6 pb-2 rounded-2xl border font-medium text-slate-700" value={newAnalysis.deliveryDate || ''} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
                    </div>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <input type="text" placeholder="Lote" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
                    <input type="text" required placeholder="ID Folio *" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.sampleId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleId: e.target.value})} />
                 </div>
-                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <select required className="w-full px-5 py-3.5 rounded-2xl border bg-white" value={newAnalysis.clientId || ''} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
                     <option value="">Cliente...</option>
@@ -844,44 +855,30 @@ const App: React.FC = () => {
                     {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
-
                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                     <h4 className="font-bold text-slate-700 mb-4">Selecciona Análisis</h4>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {types.map(t => {
                             const isSelected = (newAnalysis.analysisIds || []).includes(t.id);
                             return (
-                                <button 
-                                    key={t.id} 
-                                    type="button"
-                                    onClick={() => toggleAnalysisSelection(t.id, t.baseCost)}
-                                    className={`text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}
-                                >
-                                    <div>
-                                        <div className="font-bold text-sm">{t.name}</div>
-                                        <div className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>${t.baseCost} / {t.unit}</div>
-                                    </div>
+                                <button key={t.id} type="button" onClick={() => toggleAnalysisSelection(t.id, t.baseCost)} className={`text-left p-3 rounded-xl border transition-all flex items-start gap-3 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300'}`}>
+                                    <div><div className="font-bold text-sm">{t.name}</div><div className={`text-[10px] ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>${t.baseCost} / {t.unit}</div></div>
                                 </button>
                             )
                         })}
                     </div>
                 </div>
-
-                <div className="flex justify-end items-center gap-4 bg-indigo-50 p-4 rounded-xl">
-                  <span className="text-slate-600 font-medium">Costo Estimado: ${newAnalysis.cost || 0}</span>
-                </div>
-
+                <div className="flex justify-end bg-indigo-50 p-4 rounded-xl"><span className="text-slate-600 font-medium">Costo Estimado: ${newAnalysis.cost || 0}</span></div>
                 <div className="pt-6 flex gap-4">
                   <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl">Cancelar</button>
-                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">
-                    {isSyncing ? 'Sincronizando...' : 'Confirmar Ingreso'}
-                  </button>
+                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">{isSyncing ? 'Enviando...' : 'Confirmar Ingreso'}</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
+        {/* MODAL RESULTADOS */}
         {showResultsModal && selectedRecordForResults && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                 <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
@@ -894,166 +891,77 @@ const App: React.FC = () => {
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{type.name} ({type.unit})</label>
-                                    <input 
-                                        type="text" 
-                                        className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none"
-                                        value={currentResults[type.id] || ''}
-                                        onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})}
-                                    />
+                                    <input type="text" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
                                 </div>
                             ))}
                         </div>
                         <div className="pt-6 flex gap-4">
                             <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cancelar</button>
-                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl">Guardar Resultados</button>
+                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl">Guardar y Sincronizar</button>
                         </div>
                     </form>
                 </div>
             </div>
         )}
 
+        {/* REPORTE FORMAL */}
         {showReportModal && selectedRecordForReport && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-50 overflow-y-auto">
              <div className="fixed top-6 right-6 flex flex-col sm:flex-row gap-3 no-print z-[60]">
-                <button onClick={handleDownloadPDF} className="bg-green-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-green-700 flex items-center gap-2">
-                  <Download size={20} /> Descargar
-                </button>
-                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-indigo-700 flex items-center gap-2">
-                  <Printer size={20} /> Imprimir
-                </button>
-                <button onClick={() => setShowReportModal(false)} className="bg-white text-slate-700 px-5 py-3 rounded-full font-bold shadow-xl border border-slate-200 flex items-center gap-2">
-                  <X size={20} /> Cerrar
-                </button>
+                <button onClick={handleDownloadPDF} className="bg-green-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-green-700 flex items-center gap-2"><Download size={20} /> Descargar</button>
+                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-indigo-700 flex items-center gap-2"><Printer size={20} /> Imprimir</button>
+                <button onClick={() => setShowReportModal(false)} className="bg-white text-slate-700 px-5 py-3 rounded-full font-bold shadow-xl border border-slate-200 flex items-center gap-2"><X size={20} /> Cerrar</button>
              </div>
-
              <div className="flex min-h-full items-center justify-center p-4 py-20">
                 <div id="report-preview" className="bg-white w-full max-w-[21cm] min-h-[29.7cm] shadow-2xl p-12 text-slate-800">
-                    {/* Header Reporte */}
                     <div className="flex justify-between items-start border-b-2 border-indigo-600 pb-6 mb-8">
                        <div className="flex items-center gap-4">
                           <div className="bg-indigo-600 p-2 rounded-lg text-white"><Beaker size={32} /></div>
-                          <div>
-                            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">LabSync <span className="text-indigo-600">Pro</span></h1>
-                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Servicios Analíticos de Excelencia</p>
-                          </div>
+                          <div><h1 className="text-3xl font-extrabold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Excelencia Analítica</p></div>
                        </div>
                        <div className="text-right">
-                          <h2 className="text-2xl font-black text-indigo-700 mb-1">CERTIFICADO DE ANÁLISIS</h2>
-                          <div className="bg-slate-100 px-3 py-1 rounded-lg inline-block border border-slate-200">
-                             <p className="text-sm font-bold text-slate-600">FOLIO: <span className="font-mono text-indigo-600">{selectedRecordForReport.sampleId}</span></p>
-                          </div>
+                          <h2 className="text-2xl font-black text-indigo-700">CERTIFICADO</h2>
+                          <div className="bg-slate-100 px-3 py-1 rounded-lg inline-block border border-slate-200"><p className="text-sm font-bold text-slate-600">FOLIO: <span className="font-mono text-indigo-600">{selectedRecordForReport.sampleId}</span></p></div>
                        </div>
                     </div>
-
-                    {/* Información del Cliente y Técnico */}
                     <div className="grid grid-cols-2 gap-10 mb-10">
                        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                          <h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 flex items-center gap-2">
-                             <Users size={12}/> Información del Cliente
-                          </h3>
-                          <div className="space-y-1">
-                             <p className="text-lg font-bold text-slate-900">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name || 'N/A'}</p>
-                             <p className="text-sm text-slate-600 leading-relaxed">{clients.find(c => c.id === selectedRecordForReport.clientId)?.address || 'Dirección no disponible'}</p>
-                             <div className="pt-2 flex flex-col gap-1">
-                                <span className="text-xs text-slate-500 font-bold flex items-center gap-1"><Mail size={10}/> {clients.find(c => c.id === selectedRecordForReport.clientId)?.email || '-'}</span>
-                                <span className="text-xs text-slate-500 font-bold flex items-center gap-1"><Phone size={10}/> {clients.find(c => c.id === selectedRecordForReport.clientId)?.phone || '-'}</span>
-                                <span className="text-xs text-indigo-600 font-bold mt-1 flex items-center gap-1"><UserIcon size={10}/> At'n: {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName || '---'}</span>
-                             </div>
-                          </div>
+                          <h3 className="text-[10px] font-black uppercase text-indigo-500 mb-3 flex items-center gap-2"><Users size={12}/> Cliente</h3>
+                          <p className="text-lg font-bold text-slate-900">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name || 'N/A'}</p>
+                          <p className="text-sm text-slate-600">{clients.find(c => c.id === selectedRecordForReport.clientId)?.address}</p>
+                          <p className="text-xs text-indigo-600 font-bold mt-2">At'n: {clients.find(c => c.id === selectedRecordForReport.clientId)?.contactName}</p>
                        </div>
                        <div className="p-5 rounded-2xl border border-slate-100 bg-white">
-                          <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-3 flex items-center gap-2">
-                             <ShieldAlert size={12}/> Responsable Técnico
-                          </h3>
-                          <div className="space-y-1">
-                             <p className="text-base font-bold text-slate-800">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name || 'Analista de Turno'}</p>
-                             <p className="text-xs font-bold text-indigo-500 uppercase tracking-tighter">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.specialty || 'Laboratorista Técnico'}</p>
-                             <div className="pt-4 border-t border-slate-50 mt-4 space-y-1">
-                                <p className="text-xs text-slate-400">Fecha de Recepción: <span className="text-slate-700 font-bold">{selectedRecordForReport.receptionDate}</span></p>
-                                <p className="text-xs text-slate-400">Fecha de Emisión: <span className="text-indigo-600 font-bold">{new Date().toLocaleDateString('es-MX')}</span></p>
-                             </div>
-                          </div>
+                          <h3 className="text-[10px] font-black uppercase text-slate-400 mb-3 flex items-center gap-2"><ShieldAlert size={12}/> Técnico Responsable</h3>
+                          <p className="text-base font-bold text-slate-800">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}</p>
+                          <p className="text-xs font-bold text-indigo-500 uppercase">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.specialty}</p>
+                          <p className="text-xs text-slate-400 mt-4">Emisión: <span className="text-indigo-600 font-bold">{new Date().toLocaleDateString('es-MX')}</span></p>
                        </div>
                     </div>
-
-                    {/* Datos de la Muestra */}
                     <div className="mb-10 p-6 bg-indigo-900 rounded-3xl text-white shadow-xl relative overflow-hidden">
-                       <div className="absolute top-0 right-0 p-8 opacity-10"><Package size={120} /></div>
-                       <h3 className="text-[10px] font-black uppercase text-indigo-300 tracking-widest mb-4 flex items-center gap-2">
-                          <Hash size={12}/> Identificación de la Muestra
-                       </h3>
-                       <div className="grid grid-cols-2 md:grid-cols-4 gap-6 relative z-10">
-                          <div>
-                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Nombre Muestra</p>
-                             <p className="text-base font-bold">{selectedRecordForReport.sampleName}</p>
-                          </div>
-                          <div>
-                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Producto</p>
-                             <p className="text-base font-bold">{selectedRecordForReport.product}</p>
-                          </div>
-                          <div>
-                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Lote / ID</p>
-                             <p className="text-base font-mono font-bold">{selectedRecordForReport.batch || 'N/A'}</p>
-                          </div>
-                          <div>
-                             <p className="text-[10px] text-indigo-300 font-bold uppercase mb-1">Procedencia</p>
-                             <p className="text-base font-bold">{selectedRecordForReport.origin || 'N/A'}</p>
-                          </div>
+                       <h3 className="text-[10px] font-black uppercase text-indigo-300 mb-4 flex items-center gap-2"><Hash size={12}/> Identificación</h3>
+                       <div className="grid grid-cols-4 gap-6 relative z-10">
+                          <div><p className="text-[10px] text-indigo-300 uppercase mb-1">Muestra</p><p className="text-base font-bold">{selectedRecordForReport.sampleName}</p></div>
+                          <div><p className="text-[10px] text-indigo-300 uppercase mb-1">Producto</p><p className="text-base font-bold">{selectedRecordForReport.product}</p></div>
+                          <div><p className="text-[10px] text-indigo-300 uppercase mb-1">Lote</p><p className="text-base font-bold">{selectedRecordForReport.batch || 'S/L'}</p></div>
+                          <div><p className="text-[10px] text-indigo-300 uppercase mb-1">Origen</p><p className="text-base font-bold">{selectedRecordForReport.origin || 'N/A'}</p></div>
                        </div>
                     </div>
-
-                    {/* Tabla de Resultados */}
                     <div className="mb-12 border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                       <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-                          <h3 className="text-xs font-black text-slate-600 uppercase flex items-center gap-2 tracking-widest">
-                             <ClipboardList size={14}/> Resultados de Laboratorio
-                          </h3>
-                       </div>
                        <table className="w-full text-left border-collapse">
-                          <thead>
-                             <tr className="bg-white text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                                <th className="px-8 py-4 border-b">Parámetro de Análisis</th>
-                                <th className="px-8 py-4 border-b text-center">Unidad</th>
-                                <th className="px-8 py-4 border-b text-right">Resultado Obtenido</th>
-                             </tr>
-                          </thead>
+                          <thead className="bg-slate-50"><tr className="text-slate-600 text-[10px] font-black uppercase"><th className="px-8 py-4 border-b">Parámetro</th><th className="px-8 py-4 border-b text-center">Unidad</th><th className="px-8 py-4 border-b text-right">Resultado</th></tr></thead>
                           <tbody className="divide-y divide-slate-100">
                              {types.filter(t => selectedRecordForReport.analysisIds.includes(t.id)).map((type) => (
-                                <tr key={type.id} className="hover:bg-slate-50/30 transition-colors">
-                                   <td className="px-8 py-5 font-bold text-slate-900 border-r border-slate-50">{type.name}</td>
-                                   <td className="px-8 py-5 text-center text-slate-500 font-medium italic border-r border-slate-50">{type.unit}</td>
-                                   <td className="px-8 py-5 text-right font-mono font-black text-indigo-600 text-lg">
-                                      {selectedRecordForReport.results?.[type.id] || 'N.D.'}
-                                   </td>
-                                </tr>
+                                <tr key={type.id}><td className="px-8 py-5 font-bold text-slate-900">{type.name}</td><td className="px-8 py-5 text-center text-slate-500 italic">{type.unit}</td><td className="px-8 py-5 text-right font-mono font-black text-indigo-600 text-lg">{selectedRecordForReport.results?.[type.id] || 'N.D.'}</td></tr>
                              ))}
                           </tbody>
                        </table>
                     </div>
-
-                    {/* Notas y Firmas */}
-                    <div className="mt-auto pt-10 grid grid-cols-2 gap-20">
-                       <div className="space-y-4">
-                          <p className="text-[10px] text-slate-400 italic font-medium leading-relaxed">
-                             * Los resultados contenidos en este certificado se refieren exclusivamente a la muestra recibida y analizada en nuestras instalaciones bajo las condiciones estándar de laboratorio.
-                          </p>
-                       </div>
-                       <div className="flex flex-col items-center">
-                          <div className="w-full border-b-2 border-slate-300 mb-2"></div>
-                          <p className="text-xs font-black text-slate-800 uppercase tracking-widest">Firma Autorizada</p>
-                          <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">Sello de Control de Calidad</p>
-                       </div>
+                    <div className="mt-auto pt-20 grid grid-cols-2 gap-20">
+                       <p className="text-[10px] text-slate-400 italic font-medium leading-relaxed">Certificado emitido electrónicamente. Los resultados son definitivos para la muestra bajo estudio.</p>
+                       <div className="flex flex-col items-center"><div className="w-full border-b-2 border-slate-300 mb-2"></div><p className="text-xs font-black text-slate-800 uppercase tracking-widest">Firma Autorizada</p></div>
                     </div>
-
-                    {/* Footer del Reporte */}
-                    <div className="mt-20 pt-8 border-t border-slate-100 flex justify-between items-center text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                       <span>Generado vía LabSync Pro ERP System</span>
-                       <div className="flex gap-4">
-                          <span>Certificación ISO 9001:2015</span>
-                          <span>|</span>
-                          <span>Pagina 1 de 1</span>
-                       </div>
-                    </div>
+                    <div className="mt-10 pt-8 border-t border-slate-100 text-[9px] text-slate-400 font-bold flex justify-between uppercase"><span>LabSync Pro ERP</span><span>ISO 9001:2015</span></div>
                 </div>
              </div>
           </div>
@@ -1064,6 +972,4 @@ const App: React.FC = () => {
 };
 
 const rootElement = document.getElementById('root');
-if (rootElement) {
-  createRoot(rootElement).render(<App />);
-}
+if (rootElement) { createRoot(rootElement).render(<App />); }
