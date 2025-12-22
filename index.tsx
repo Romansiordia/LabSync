@@ -169,7 +169,6 @@ const App: React.FC = () => {
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [showDetailModal, setShowDetailModal] = useState(false);
   
   // --- Estados de Datos ---
   const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)));
@@ -180,8 +179,6 @@ const App: React.FC = () => {
   
   const [selectedRecordForResults, setSelectedRecordForResults] = useState<AnalysisRecord | null>(null);
   const [selectedRecordForReport, setSelectedRecordForReport] = useState<AnalysisRecord | null>(null);
-  const [selectedRecordForDetail, setSelectedRecordForDetail] = useState<AnalysisRecord | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
   const [currentResults, setCurrentResults] = useState<Record<string, string>>({});
 
   const [newAnalysis, setNewAnalysis] = useState<Partial<AnalysisRecord>>({
@@ -199,7 +196,6 @@ const App: React.FC = () => {
 
   const [googleUrl, setGoogleUrl] = useState(() => localStorage.getItem('lab_google_url') || '');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // --- Persistencia ---
   useEffect(() => {
@@ -222,23 +218,20 @@ const App: React.FC = () => {
     setIsLoginLoading(true);
 
     try {
-      // Si hay URL de Google, intentar validar contra la pestaña de Usuarios
+      // Intentar validación vía Google Apps Script si existe la URL
       if (googleUrl) {
-        const response = await fetch(googleUrl, {
-          method: 'POST',
-          mode: 'no-cors', // Para evitar problemas de CORS con Apps Script simple
-          body: JSON.stringify({ 
-            action: 'login', 
-            email: loginForm.email, 
-            password: loginForm.password 
-          })
-        });
-        
-        // Simulación de respuesta exitosa de Google por ahora (dado que no podemos leer la respuesta de no-cors)
-        // En un entorno real, usaríamos JSONP o un proxy para leer el resultado del login.
+         try {
+            const res = await fetch(googleUrl, {
+               method: 'POST',
+               mode: 'no-cors',
+               body: JSON.stringify({ action: 'login', email: loginForm.email, password: loginForm.password })
+            });
+            // Dado que no-cors no permite leer respuesta, dependemos de que el usuario use las credenciales correctas
+            // En una versión más avanzada usaríamos JSONP para validación real.
+         } catch (err) { console.error("Error validando con Google", err); }
       }
 
-      // LOGIN SIMULADO (Para demostración)
+      // LOGIN DE RESPALDO (Mocks solicitados)
       let mockUser: AuthUser | null = null;
       if (loginForm.email === 'admin@labsync.com' && loginForm.password === 'admin123') {
         mockUser = { id: 'u1', name: 'Administrador Lab', email: 'admin@labsync.com', role: 'Admin' };
@@ -252,7 +245,7 @@ const App: React.FC = () => {
         setCurrentUser(mockUser);
         setActiveTab('dashboard');
       } else {
-        alert("Credenciales incorrectas. Pruebe:\n- admin@labsync.com / admin123\n- tecnico@labsync.com / tech123\n- recepcion@labsync.com / rec123");
+        alert("Credenciales incorrectas.");
       }
     } catch (error) {
       alert("Error en el servidor de autenticación.");
@@ -295,59 +288,24 @@ const App: React.FC = () => {
     return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
   };
 
-  const pullFromGoogle = async () => {
-    if (!googleUrl) { alert("Configure la URL de Google Sheets."); return; }
-    setIsSyncing(true);
-    try {
-      const response = await fetch(googleUrl);
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        const mergedAnalyses = [...analyses];
-        data.forEach((row: any) => {
-          if (!row.Folio) return;
-          const existingIndex = mergedAnalyses.findIndex(a => a.sampleId === row.Folio.toString());
-          const analysisIds: string[] = [];
-          types.forEach(t => { if (row[t.name]) analysisIds.push(t.id); });
-          const results: Record<string, string> = {};
-          types.forEach(t => { if (row[t.name] && row[t.name] !== "[SOLICITADO]") { results[t.id] = row[t.name].toString(); } });
-          
-          const newRecord: AnalysisRecord = {
-            id: existingIndex !== -1 ? mergedAnalyses[existingIndex].id : `ext_${Date.now()}_${row.Folio}`,
-            sampleId: row.Folio.toString(),
-            sampleName: row.Muestra || "Muestra Importada",
-            product: row.Producto || "General",
-            origin: row.Procedencia || row.Origen || "",
-            provider: row.Proveedor || "",
-            batch: row.Lote || "",
-            clientId: clients.find(c => c.name === row.Cliente)?.id || (clients[0]?.id || ""),
-            technicianId: techs.find(t => t.name === row.Técnico)?.id || (techs[0]?.id || ""),
-            analysisIds: analysisIds,
-            results: results,
-            receptionDate: row["Fecha Recepción"] || new Date().toISOString().split('T')[0],
-            deliveryDate: row["Fecha Entrega"] || new Date().toISOString().split('T')[0],
-            priority: row.Prioridad || 'Normal',
-            cost: parseFloat(row.Costo) || 0,
-            status: row.Estatus === 'Completado' ? 'Completed' : row.Estatus === 'En Proceso' ? 'In Progress' : 'Pending'
-          };
-          if (existingIndex !== -1) mergedAnalyses[existingIndex] = newRecord;
-          else mergedAnalyses.push(newRecord);
-        });
-        setAnalyses(mergedAnalyses);
-        setSyncStatus('success');
-      }
-    } catch (error) { setSyncStatus('error'); } finally { setIsSyncing(false); setTimeout(() => setSyncStatus('idle'), 3000); }
-  };
-
   const syncWithGoogle = async (data: any) => {
     if (!googleUrl) return;
     setIsSyncing(true);
     try {
       await fetch(googleUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(data) });
-      setSyncStatus('success');
-    } catch (error) { setSyncStatus('error'); } finally { setIsSyncing(false); setTimeout(() => setSyncStatus('idle'), 3000); }
+    } catch (error) { console.error("Error sincronizando", error); } finally { setIsSyncing(false); }
   };
 
-  // --- Renderizado Condicional de Sidebar ---
+  const toggleAnalysis = (id: string) => {
+    const current = newAnalysis.analysisIds || [];
+    const updated = current.includes(id) ? current.filter(i => i !== id) : [...current, id];
+    const totalCost = updated.reduce((acc, analysisId) => {
+       const type = types.find(t => t.id === analysisId);
+       return acc + (type?.baseCost || 0);
+    }, 0);
+    setNewAnalysis({ ...newAnalysis, analysisIds: updated, cost: totalCost });
+  };
+
   const canSee = (tab: typeof activeTab) => {
     if (!currentUser) return false;
     if (currentUser.role === 'Admin') return true;
@@ -359,12 +317,10 @@ const App: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Background Elements */}
         <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none">
            <div className="absolute -top-24 -left-24 w-96 h-96 bg-indigo-600 rounded-full blur-[120px]"></div>
            <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-blue-600 rounded-full blur-[120px]"></div>
         </div>
-        
         <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl overflow-hidden relative z-10 border border-white/20 animate-in">
            <div className="p-10 pt-12 text-center bg-slate-50 border-b border-slate-100">
               <div className="inline-flex items-center justify-center bg-indigo-600 p-4 rounded-[1.5rem] text-white shadow-xl mb-6">
@@ -373,59 +329,31 @@ const App: React.FC = () => {
               <h1 className="text-3xl font-black text-slate-900 tracking-tight">LabSync <span className="text-indigo-600">Pro</span></h1>
               <p className="text-slate-500 mt-2 font-medium">Gestión Inteligente de Laboratorios</p>
            </div>
-           
            <form onSubmit={handleLogin} className="p-10 space-y-6">
               <div className="space-y-4">
                  <div className="relative">
                     <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input 
-                      type="email" 
-                      required 
-                      placeholder="Correo Electrónico" 
-                      className="w-full pl-12 pr-6 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700"
-                      value={loginForm.email}
-                      onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
-                    />
+                    <input type="email" required placeholder="Correo Electrónico" className="w-full pl-12 pr-6 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" value={loginForm.email} onChange={(e) => setLoginForm({...loginForm, email: e.target.value})} />
                  </div>
                  <div className="relative">
                     <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input 
-                      type="password" 
-                      required 
-                      placeholder="Contraseña" 
-                      className="w-full pl-12 pr-6 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700"
-                      value={loginForm.password}
-                      onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
-                    />
+                    <input type="password" required placeholder="Contraseña" className="w-full pl-12 pr-6 py-4 rounded-2xl bg-slate-50 border border-slate-200 focus:border-indigo-500 outline-none transition-all font-bold text-slate-700" value={loginForm.password} onChange={(e) => setLoginForm({...loginForm, password: e.target.value})} />
                  </div>
               </div>
-              
-              <button 
-                type="submit" 
-                disabled={isLoginLoading}
-                className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3"
-              >
+              <button type="submit" disabled={isLoginLoading} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3">
                 {isLoginLoading ? <RefreshCw className="animate-spin" size={20}/> : <ChevronRight size={20}/>}
                 {isLoginLoading ? 'Iniciando...' : 'Entrar al Sistema'}
               </button>
-              
-              <div className="pt-4 text-center">
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Conexión Segura v2.5</p>
-              </div>
            </form>
         </div>
       </div>
     );
   }
 
-  // --- Renderizado Sidebar Item ---
   const renderSidebarItem = (id: typeof activeTab, icon: React.ReactNode, label: string) => {
     if (!canSee(id)) return null;
     return (
-      <button 
-        onClick={() => setActiveTab(id)} 
-        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-      >
+      <button onClick={() => setActiveTab(id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
         {icon} <span className="font-medium">{label}</span>
       </button>
     );
@@ -450,36 +378,21 @@ const App: React.FC = () => {
             </div>
           </nav>
         </div>
-
-        {/* User Card in Sidebar */}
         <div className="p-4 bg-slate-800/50 border-t border-slate-800">
            <div className="flex items-center gap-3 px-2 mb-3">
               <div className="bg-indigo-500/20 p-2 rounded-xl text-indigo-400"><UserIcon size={18}/></div>
               <div className="min-w-0">
                  <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                 <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                   currentUser.role === 'Admin' ? 'bg-indigo-600 text-white' : 
-                   currentUser.role === 'Technician' ? 'bg-green-600 text-white' : 'bg-orange-600 text-white'
-                 }`}>{currentUser.role}</span>
+                 <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${currentUser.role === 'Admin' ? 'bg-indigo-600 text-white' : currentUser.role === 'Technician' ? 'bg-green-600 text-white' : 'bg-orange-600 text-white'}`}>{currentUser.role}</span>
               </div>
            </div>
-           <button 
-             onClick={handleLogout}
-             className="w-full flex items-center justify-center gap-2 py-2 text-xs font-bold text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-           >
-              <LogOut size={14}/> Cerrar Sesión
-           </button>
+           <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 py-2 text-xs font-bold text-red-400 hover:bg-red-400/10 rounded-lg transition-all"><LogOut size={14}/> Cerrar Sesión</button>
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10 shrink-0">
           <h2 className="text-xl font-semibold text-slate-800 capitalize">{activeTab}</h2>
-          <div className="flex items-center space-x-4">
-             <button onClick={pullFromGoogle} disabled={isSyncing} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 hover:bg-indigo-100 transition-all font-bold text-xs">
-                <CloudDownload size={16} /> {isSyncing ? 'Buscando...' : 'Actualizar Datos'}
-             </button>
-          </div>
         </header>
 
         <div className="p-8 overflow-y-auto flex-1">
@@ -499,21 +412,13 @@ const App: React.FC = () => {
                  </div>
                ))}
              </div>
-             
-             {/* Gráficas solo visibles para Admin y Recepción (Ventas) */}
              {['Admin', 'Reception'].includes(currentUser.role) && (
                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><TrendingUp size={18} className="text-indigo-600" /> Facturación por Cliente</h3>
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stats.clientStats}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                          <Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} />
-                          <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} />
-                        </BarChart>
+                        <BarChart data={stats.clientStats}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} /><Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} /></BarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
@@ -521,12 +426,7 @@ const App: React.FC = () => {
                     <h3 className="font-bold text-slate-800 mb-6 text-center">Carga por Técnico</h3>
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats.techStats}>
-                          <defs><linearGradient id="colorTests" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                          <Tooltip /><Area type="monotone" dataKey="tests" stroke="#10b981" fillOpacity={1} fill="url(#colorTests)" strokeWidth={3} />
-                        </AreaChart>
+                        <AreaChart data={stats.techStats}><defs><linearGradient id="colorTests" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip /><Area type="monotone" dataKey="tests" stroke="#10b981" fillOpacity={1} fill="url(#colorTests)" strokeWidth={3} /></AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
@@ -540,96 +440,31 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div>
                   <h3 className="text-xl font-bold text-slate-900">Bitácora de Recepción</h3>
-                  <p className="text-slate-500 text-sm">Gestiona y consulta el historial de ingresos del laboratorio.</p>
+                  <p className="text-slate-500 text-sm">Gestiona y consulta el historial de ingresos.</p>
                 </div>
-                {/* Registro solo para Admin y Recepción */}
                 {['Admin', 'Reception'].includes(currentUser.role) && (
-                  <button 
-                    onClick={() => {
-                      const nextFolio = generateNextFolio();
-                      setNewAnalysis({
-                        priority: 'Normal',
-                        status: 'Pending',
-                        product: products[0] || '',
-                        origin: '',
-                        provider: '',
-                        batch: '',
-                        analysisIds: [],
-                        sampleId: nextFolio,
-                        receptionDate: new Date().toISOString().split('T')[0],
-                        deliveryDate: new Date(Date.now() + 86400000 * 5).toISOString().split('T')[0],
-                        cost: 0
-                      });
-                      setShowAnalysisModal(true);
-                    }} 
-                    className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg font-bold"
-                  >
-                    <Plus size={20} /> Registrar Muestra
-                  </button>
+                  <button onClick={() => { setNewAnalysis({...newAnalysis, sampleId: generateNextFolio(), analysisIds: [], cost: 0}); setShowAnalysisModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg font-bold"><Plus size={20} /> Registrar Muestra</button>
                 )}
               </div>
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[1200px]">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                        <th className="px-6 py-4">Folio / Identificación</th>
-                        <th className="px-6 py-4">Muestra</th>
-                        <th className="px-6 py-4">Logística</th>
-                        <th className="px-6 py-4">Administración</th>
-                        <th className="px-6 py-4">Análisis</th>
-                        <th className="px-6 py-4">Estado</th>
-                        <th className="px-6 py-4 text-right">Acciones</th>
-                      </tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider"><th className="px-6 py-4">Folio</th><th className="px-6 py-4">Muestra</th><th className="px-6 py-4">Logística</th><th className="px-6 py-4">Admón</th><th className="px-6 py-4">Análisis</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acciones</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {analyses.map(record => (
                         <tr key={record.id} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-4">
-                            <button onClick={() => { setSelectedRecordForDetail(record); setIsEditMode(false); setShowDetailModal(true); }} className="flex flex-col text-left group-hover:translate-x-1 transition-transform">
-                              <span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full mb-1">{record.sampleId}</span>
-                              <span className="text-[11px] text-slate-400 flex items-center gap-1 font-bold uppercase"><Calendar size={10} /> {record.receptionDate}</span>
-                            </button>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-900 text-sm">{record.sampleName}</span>
-                              <span className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-1"><Package size={10}/> {record.product}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="text-[11px] space-y-1">
-                              <p className="flex items-center gap-1 text-slate-500 font-medium"><Truck size={10} /> {record.provider || 'N/A'}</p>
-                              <p className="flex items-center gap-1 text-slate-500 font-medium"><Globe size={10} /> {record.origin || 'N/A'}</p>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-xs font-bold text-slate-700 mb-1">{clients.find(c => c.id === record.clientId)?.name || 'C. General'}</p>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{techs.find(t => t.id === record.technicianId)?.name || 'S. Asignar'}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                             <div className="flex flex-wrap gap-1 max-w-[180px]">
-                                {types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (
-                                  <span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${record.results?.[t.id] ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{t.name}</span>
-                                ))}
-                             </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${record.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
-                              {record.status}
-                            </span>
-                          </td>
+                          <td className="px-6 py-4"><span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{record.sampleId}</span></td>
+                          <td className="px-6 py-4"><div className="flex flex-col"><span className="font-bold text-slate-900 text-sm">{record.sampleName}</span><span className="text-[10px] text-slate-500 font-medium">{record.product}</span></div></td>
+                          <td className="px-6 py-4 text-[11px] text-slate-500"><p className="flex items-center gap-1"><Truck size={10} /> {record.provider}</p><p className="flex items-center gap-1"><Globe size={10} /> {record.origin}</p></td>
+                          <td className="px-6 py-4"><p className="text-xs font-bold text-slate-700">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{techs.find(t => t.id === record.technicianId)?.name || 'Pendiente'}</p></td>
+                          <td className="px-6 py-4"><div className="flex flex-wrap gap-1 max-w-[180px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${record.results?.[t.id] ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{t.name}</span>))}</div></td>
+                          <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${record.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{record.status}</span></td>
                           <td className="px-6 py-4 text-right space-x-1 flex justify-end">
-                             {/* Captura solo para Admin y Técnico */}
-                             {['Admin', 'Technician'].includes(currentUser.role) && (
-                               <button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} title="Capturar Resultados" className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg border border-indigo-100 bg-white shadow-sm"><FlaskConical size={16} /></button>
-                             )}
-                             {record.status === 'Completed' && (
-                               <button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} title="Imprimir Reporte" className="text-slate-600 p-2 hover:bg-slate-100 rounded-lg border border-slate-200 bg-white shadow-sm"><Printer size={16} /></button>
-                             )}
-                             {currentUser.role === 'Admin' && (
-                               <button onClick={() => setAnalyses(analyses.filter(a => a.id !== record.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
-                             )}
+                             {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg border border-indigo-100 bg-white"><FlaskConical size={16} /></button>)}
+                             {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-2 hover:bg-slate-100 rounded-lg border border-slate-200 bg-white"><Printer size={16} /></button>)}
+                             {currentUser.role === 'Admin' && (<button onClick={() => setAnalyses(analyses.filter(a => a.id !== record.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>)}
                           </td>
                         </tr>
                       ))}
@@ -641,83 +476,106 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'settings' && currentUser.role === 'Admin' && (
-            <div className="max-w-2xl mx-auto space-y-6">
-               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-4 mb-6"><div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div><h3 className="text-xl font-bold text-slate-900">Enlace con Google Sheets</h3></div>
-                  <div className="space-y-4">
-                    <input type="text" placeholder="URL de Google Apps Script" className="w-full px-5 py-4 rounded-2xl border border-slate-200 outline-none font-mono text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-500" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} />
-                    <button onClick={() => alert("URL Guardada")} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all">Guardar Configuración</button>
-                  </div>
-               </div>
-               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                  <div className="flex items-center gap-4 mb-6"><div className="bg-orange-500 p-3 rounded-2xl text-white"><Users size={24} /></div><h3 className="text-xl font-bold text-slate-900">Gestión de Usuarios</h3></div>
-                  <p className="text-slate-500 text-sm mb-4 italic">La gestión de contraseñas y roles se realiza directamente en la pestaña 'Usuarios' de su Google Sheet para máxima seguridad.</p>
-                  <button onClick={() => window.open(googleUrl.split('/exec')[0], '_blank')} className="flex items-center gap-2 text-indigo-600 font-bold hover:underline"><ExternalLink size={16}/> Abrir archivo de Control</button>
-               </div>
-            </div>
+             <div className="max-w-2xl mx-auto space-y-6">
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+                   <div className="flex items-center gap-4 mb-6"><div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div><h3 className="text-xl font-bold text-slate-900">Enlace con Google Sheets</h3></div>
+                   <input type="text" placeholder="URL de Google Apps Script" className="w-full px-5 py-4 rounded-2xl border border-slate-200 outline-none font-mono text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-500 mb-4" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} />
+                   <button onClick={() => alert("URL Guardada")} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all shadow-xl">Guardar Configuración</button>
+                </div>
+             </div>
           )}
         </div>
 
         {/* --- MODALES --- */}
-        {/* Registro (Ingreso) */}
         {showAnalysisModal && (
           <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in">
-              <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/80">
-                <h3 className="text-2xl font-bold text-slate-900">Registro de Muestra</h3>
-                <button onClick={() => setShowAnalysisModal(false)} className="p-3 hover:bg-white rounded-2xl text-slate-400"><X size={24} /></button>
-              </div>
-              <form 
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const record: AnalysisRecord = { 
-                    ...(newAnalysis as Required<Omit<AnalysisRecord, 'id' | 'results' | 'comments'>>), 
-                    id: `a${Date.now()}`, 
-                    results: {}, 
-                    comments: "" 
-                  } as AnalysisRecord;
-                  setAnalyses([record, ...analyses]);
-                  setShowAnalysisModal(false);
-                  if (googleUrl) {
-                    syncWithGoogle({ action: 'create', ...record });
-                  }
-                }} 
-                className="p-10 space-y-8 overflow-y-auto max-h-[75vh]"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <input type="text" required placeholder="Nombre Muestra *" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.sampleName || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleName: e.target.value})} />
-                  <select required className="w-full px-5 py-3.5 rounded-2xl border bg-white" value={newAnalysis.product} onChange={(e) => setNewAnalysis({...newAnalysis, product: e.target.value})}>
-                    {products.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in">
+              <div className="px-10 py-6 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
+                <div className="flex items-center gap-3">
+                   <div className="bg-white/20 p-2 rounded-xl"><Plus size={24} /></div>
+                   <h3 className="text-2xl font-bold">Nueva Muestra ({newAnalysis.sampleId})</h3>
                 </div>
-                {/* ... Resto de los campos del formulario de ingreso ... */}
-                <div className="pt-6 flex gap-4">
-                  <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl">Cancelar</button>
-                  <button type="submit" disabled={isSyncing} className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl hover:bg-indigo-700">Confirmar Registro</button>
+                <button onClick={() => setShowAnalysisModal(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={24} /></button>
+              </div>
+              
+              <form onSubmit={(e) => { e.preventDefault(); const record = { ...newAnalysis, id: `a${Date.now()}`, status: 'Pending', results: {}, comments: "" } as AnalysisRecord; setAnalyses([record, ...analyses]); setShowAnalysisModal(false); syncWithGoogle({ action: 'create', ...record }); }} className="p-10 overflow-y-auto max-h-[80vh]">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  {/* Columna 1: Información Base */}
+                  <div className="space-y-6">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} /> Datos de Identificación</h4>
+                    <div className="space-y-4">
+                       <input type="text" required placeholder="Nombre de la Muestra *" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none font-bold text-slate-700" value={newAnalysis.sampleName || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleName: e.target.value})} />
+                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold text-slate-700" value={newAnalysis.product} onChange={(e) => setNewAnalysis({...newAnalysis, product: e.target.value})}>{products.map(p => <option key={p} value={p}>{p}</option>)}</select>
+                       <input type="text" placeholder="Procedencia" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
+                       <input type="text" placeholder="Proveedor" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
+                       <input type="text" placeholder="Lote" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
+                    </div>
+                  </div>
+
+                  {/* Columna 2: Logística y Asignación */}
+                  <div className="space-y-6">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={14} /> Administración</h4>
+                    <div className="space-y-4">
+                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.clientId} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
+                          <option value="">Seleccionar Cliente *</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                       </select>
+                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.technicianId} onChange={(e) => setNewAnalysis({...newAnalysis, technicianId: e.target.value})}>
+                          <option value="">Asignar Técnico *</option>
+                          {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                       </select>
+                       <select className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.priority} onChange={(e) => setNewAnalysis({...newAnalysis, priority: e.target.value as Priority})}>
+                          <option value="Normal">Prioridad Normal</option>
+                          <option value="Urgent">Prioridad Urgente</option>
+                          <option value="Critical">Prioridad Crítica</option>
+                       </select>
+                       <div className="grid grid-cols-2 gap-4">
+                          <div><label className="text-[10px] font-bold text-slate-400 block mb-1">RECEPCIÓN</label><input type="date" className="w-full px-3 py-2 rounded-lg border text-sm" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} /></div>
+                          <div><label className="text-[10px] font-bold text-slate-400 block mb-1">ENTREGA</label><input type="date" className="w-full px-3 py-2 rounded-lg border text-sm" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} /></div>
+                       </div>
+                    </div>
+                  </div>
+
+                  {/* Columna 3: Análisis y Costo */}
+                  <div className="space-y-6">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FlaskConical size={14} /> Estudios Solicitados</h4>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-[300px] overflow-y-auto space-y-2">
+                       {types.map(t => (
+                          <label key={t.id} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
+                             <div className="flex items-center gap-3">
+                                {newAnalysis.analysisIds?.includes(t.id) ? <CheckSquare size={18} /> : <Square size={18} />}
+                                <span className="text-sm font-bold">{t.name}</span>
+                             </div>
+                             <input type="checkbox" className="hidden" checked={newAnalysis.analysisIds?.includes(t.id)} onChange={() => toggleAnalysis(t.id)} />
+                             <span className="text-xs opacity-70">${t.baseCost}</span>
+                          </label>
+                       ))}
+                    </div>
+                    <div className="bg-indigo-50 p-6 rounded-2xl border-2 border-indigo-100 flex flex-col items-center">
+                       <span className="text-xs font-bold text-indigo-400 uppercase mb-1">Costo Total Estimado</span>
+                       <span className="text-3xl font-black text-indigo-700">${newAnalysis.cost?.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-10 pt-8 border-t border-slate-100 flex gap-4">
+                  <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl hover:bg-slate-50 transition-all">Cancelar</button>
+                  <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all">Confirmar y Guardar Registro</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* Captura de Resultados */}
+        {/* Modal Resultados */}
         {showResultsModal && selectedRecordForResults && (
             <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
                 <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
-                    <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
-                        <h3 className="text-xl font-bold">Captura de Resultados</h3>
-                        <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-indigo-500 rounded-xl text-indigo-100"><X size={20} /></button>
+                    <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-green-600 text-white">
+                        <h3 className="text-xl font-bold">Captura de Resultados: {selectedRecordForResults.sampleId}</h3>
+                        <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-green-500 rounded-xl"><X size={20} /></button>
                     </div>
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const updated: AnalysisRecord = { ...selectedRecordForResults, results: currentResults, status: 'Completed' };
-                        setAnalyses(analyses.map(a => a.id === updated.id ? updated : a));
-                        setShowResultsModal(false);
-                        if (googleUrl) syncWithGoogle({ action: 'update_results', ...updated });
-                      }} 
-                      className="p-8 space-y-6"
-                    >
+                    <form onSubmit={(e) => { e.preventDefault(); const updated = { ...selectedRecordForResults, results: currentResults, status: 'Completed' as Status }; setAnalyses(analyses.map(a => a.id === updated.id ? updated : a)); setShowResultsModal(false); syncWithGoogle({ action: 'update_results', ...updated }); }} className="p-8 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
@@ -727,36 +585,38 @@ const App: React.FC = () => {
                             ))}
                         </div>
                         <div className="pt-6 flex gap-4">
-                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cancelar</button>
-                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg">Guardar Resultados</button>
+                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cerrar</button>
+                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700">Guardar y Finalizar</button>
                         </div>
                     </form>
                 </div>
             </div>
         )}
 
-        {/* Reporte (Pre-visualización) */}
+        {/* Modal Reporte (Pre-visualización Simple) */}
         {showReportModal && selectedRecordForReport && (
-          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] overflow-y-auto">
-             <div className="fixed top-6 right-6 flex flex-col sm:flex-row gap-3 no-print z-[120]">
-                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-3 rounded-full font-bold shadow-xl hover:bg-indigo-700 flex items-center gap-2"><Printer size={20} /> Imprimir</button>
-                <button onClick={() => setShowReportModal(false)} className="bg-white text-slate-700 px-5 py-3 rounded-full font-bold shadow-xl border border-slate-200 flex items-center gap-2"><X size={20} /> Cerrar</button>
-             </div>
-             <div className="flex min-h-full items-center justify-center p-4 py-20">
-                <div id="report-preview" className="bg-white w-full max-w-[21cm] min-h-[29.7cm] shadow-2xl p-12 text-slate-800">
-                    {/* Estructura del Certificado */}
-                    <div className="flex justify-between items-start border-b-2 border-indigo-600 pb-6 mb-8">
-                       <div className="flex items-center gap-4">
-                          <div className="bg-indigo-600 p-2 rounded-lg text-white"><Beaker size={32} /></div>
-                          <div><h1 className="text-3xl font-extrabold text-slate-900">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-xs text-slate-500 font-bold uppercase">Certificado de Análisis</p></div>
-                       </div>
-                       <div className="text-right">
-                          <h2 className="text-2xl font-black text-indigo-700">CERTIFICADO</h2>
-                          <p className="text-sm font-bold text-slate-600">FOLIO: <span className="font-mono text-indigo-600">{selectedRecordForReport.sampleId}</span></p>
-                       </div>
-                    </div>
-                    {/* ... Resto del contenido del reporte ... */}
+          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] overflow-y-auto flex items-center justify-center p-6">
+             <div className="bg-white w-full max-w-3xl p-12 rounded-xl relative shadow-2xl">
+                <button onClick={() => setShowReportModal(false)} className="absolute top-6 right-6 p-2 bg-slate-100 rounded-full"><X size={20}/></button>
+                <div className="border-b-2 border-indigo-600 pb-6 mb-8 flex justify-between">
+                   <div><h1 className="text-2xl font-black">LabSync Pro</h1><p className="text-xs text-slate-500">REPORTE DE LABORATORIO</p></div>
+                   <div className="text-right"><p className="text-xl font-bold text-indigo-600">FOLIO: {selectedRecordForReport.sampleId}</p></div>
                 </div>
+                <div className="grid grid-cols-2 gap-8 mb-8 text-sm">
+                   <div><p className="text-slate-400 font-bold mb-1">MUESTRA / PRODUCTO</p><p className="font-bold">{selectedRecordForReport.sampleName} - {selectedRecordForReport.product}</p></div>
+                   <div><p className="text-slate-400 font-bold mb-1">CLIENTE</p><p className="font-bold">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name}</p></div>
+                </div>
+                <table className="w-full mb-12">
+                   <thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase border-b border-slate-200"><th className="px-4 py-3 text-left">Parámetro</th><th className="px-4 py-3 text-right">Resultado</th><th className="px-4 py-3 text-left">Unidad</th></thead>
+                   <tbody>
+                      {selectedRecordForReport.analysisIds.map(aid => {
+                         const type = types.find(t => t.id === aid);
+                         return (<tr key={aid} className="border-b border-slate-100"><td className="px-4 py-3 font-bold">{type?.name}</td><td className="px-4 py-3 text-right font-mono font-black">{selectedRecordForReport.results?.[aid] || '---'}</td><td className="px-4 py-3 text-xs text-slate-500">{type?.unit}</td></tr>);
+                      })}
+                   </tbody>
+                </table>
+                <div className="flex justify-between items-end"><div className="text-xs text-slate-400">Fecha de Emisión: {new Date().toLocaleDateString()}</div><div className="text-center border-t border-slate-300 pt-2 w-48 text-xs font-bold">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}<br/>Analista Responsable</div></div>
+                <button onClick={() => window.print()} className="mt-10 w-full py-4 bg-slate-900 text-white font-bold rounded-xl no-print">Imprimir Documento</button>
              </div>
           </div>
         )}
