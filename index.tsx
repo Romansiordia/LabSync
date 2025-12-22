@@ -262,22 +262,17 @@ const App: React.FC = () => {
     setShowDetailModal(true);
   };
 
-  // --- Fixes for undefined handler errors ---
-
-  /** Opens the results capture modal for a specific record */
   const handleOpenResults = (record: AnalysisRecord) => {
     setSelectedRecordForResults(record);
     setCurrentResults(record.results || {});
     setShowResultsModal(true);
   };
 
-  /** Opens the report preview modal for a completed analysis */
   const handleOpenReport = (record: AnalysisRecord) => {
     setSelectedRecordForReport(record);
     setShowReportModal(true);
   };
 
-  /** Saves captured results and updates record status to Completed */
   const handleSaveResults = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRecordForResults) return;
@@ -299,6 +294,7 @@ const App: React.FC = () => {
         "Muestra": updatedRecord.sampleName,
         "Producto": updatedRecord.product,
         "Procedencia": updatedRecord.origin || "",
+        "Origen": updatedRecord.origin || "",
         "Proveedor": updatedRecord.provider || "",
         "Lote": updatedRecord.batch || "",
         "Cliente": selectedClient?.name || "N/A",
@@ -389,6 +385,7 @@ const App: React.FC = () => {
         "Muestra": selectedRecordForDetail.sampleName,
         "Producto": selectedRecordForDetail.product,
         "Procedencia": selectedRecordForDetail.origin || "",
+        "Origen": selectedRecordForDetail.origin || "",
         "Proveedor": selectedRecordForDetail.provider || "",
         "Lote": selectedRecordForDetail.batch || "",
         "Cliente": selectedClient?.name || "N/A",
@@ -415,8 +412,19 @@ const App: React.FC = () => {
     setShowAnalysisModal(false);
     if (googleUrl) {
        const formattedPayload: Record<string, string | number> = {
-          "Folio": record.sampleId, "Muestra": record.sampleName, "Producto": record.product, "Procedencia": record.origin || "", "Proveedor": record.provider || "", "Lote": record.batch || "",
-          "Cliente": selectedClient?.name || "N/A", "Técnico": selectedTech?.name || "N/A", "Fecha Recepción": record.receptionDate, "Fecha Entrega": record.deliveryDate, "Estatus": "Pendiente", "Costo": record.cost
+          "Folio": record.sampleId, 
+          "Muestra": record.sampleName, 
+          "Producto": record.product, 
+          "Procedencia": record.origin || "", 
+          "Origen": record.origin || "", 
+          "Proveedor": record.provider || "", 
+          "Lote": record.batch || "",
+          "Cliente": selectedClient?.name || "N/A", 
+          "Técnico": selectedTech?.name || "N/A", 
+          "Fecha Recepción": record.receptionDate, 
+          "Fecha Entrega": record.deliveryDate, 
+          "Estatus": "Pendiente", 
+          "Costo": record.cost
        };
        types.forEach(type => { if ((record.analysisIds || []).includes(type.id)) { formattedPayload[type.name] = "[SOLICITADO]"; } });
        syncWithGoogle(formattedPayload);
@@ -756,7 +764,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* OTROS MODALES (INGRESOS, RESULTADOS, REPORTES) */}
+        {/* MODAL INGRESO */}
         {showAnalysisModal && (
           <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl overflow-hidden animate-in">
