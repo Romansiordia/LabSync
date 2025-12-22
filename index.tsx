@@ -218,20 +218,16 @@ const App: React.FC = () => {
     setIsLoginLoading(true);
 
     try {
-      // Intentar validación vía Google Apps Script si existe la URL
       if (googleUrl) {
          try {
-            const res = await fetch(googleUrl, {
+            await fetch(googleUrl, {
                method: 'POST',
                mode: 'no-cors',
                body: JSON.stringify({ action: 'login', email: loginForm.email, password: loginForm.password })
             });
-            // Dado que no-cors no permite leer respuesta, dependemos de que el usuario use las credenciales correctas
-            // En una versión más avanzada usaríamos JSONP para validación real.
          } catch (err) { console.error("Error validando con Google", err); }
       }
 
-      // LOGIN DE RESPALDO (Mocks solicitados)
       let mockUser: AuthUser | null = null;
       if (loginForm.email === 'admin@labsync.com' && loginForm.password === 'admin123') {
         mockUser = { id: 'u1', name: 'Administrador Lab', email: 'admin@labsync.com', role: 'Admin' };
@@ -260,7 +256,23 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Lógica de Negocio ---
+  // --- Sincronización Estructurada ---
+  const syncWithGoogle = async (payload: any) => {
+    if (!googleUrl) return;
+    setIsSyncing(true);
+    try {
+      await fetch(googleUrl, { 
+        method: 'POST', 
+        mode: 'no-cors', 
+        body: JSON.stringify(payload) 
+      });
+    } catch (error) { 
+      console.error("Error sincronizando", error); 
+    } finally { 
+      setIsSyncing(false); 
+    }
+  };
+
   const stats = useMemo(() => {
     const totalRevenue = analyses.reduce((acc, curr) => acc + (curr.cost || 0), 0);
     const completedTests = analyses.filter(a => a.status === 'Completed').length;
@@ -288,14 +300,6 @@ const App: React.FC = () => {
     return `${prefix}${nextNumber.toString().padStart(4, '0')}`;
   };
 
-  const syncWithGoogle = async (data: any) => {
-    if (!googleUrl) return;
-    setIsSyncing(true);
-    try {
-      await fetch(googleUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(data) });
-    } catch (error) { console.error("Error sincronizando", error); } finally { setIsSyncing(false); }
-  };
-
   const toggleAnalysis = (id: string) => {
     const current = newAnalysis.analysisIds || [];
     const updated = current.includes(id) ? current.filter(i => i !== id) : [...current, id];
@@ -304,6 +308,70 @@ const App: React.FC = () => {
        return acc + (type?.baseCost || 0);
     }, 0);
     setNewAnalysis({ ...newAnalysis, analysisIds: updated, cost: totalCost });
+  };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clientObj = clients.find(c => c.id === newAnalysis.clientId);
+    const techObj = techs.find(t => t.id === newAnalysis.technicianId);
+    
+    const record = { 
+      ...newAnalysis, 
+      id: `a${Date.now()}`, 
+      status: 'Pending', 
+      results: {}, 
+      comments: "" 
+    } as AnalysisRecord;
+    
+    setAnalyses([record, ...analyses]);
+    setShowAnalysisModal(false);
+
+    // Enviar a Google de forma estructurada (Mapeo manual para el Excel)
+    syncWithGoogle({
+      action: 'create',
+      sampleId: record.sampleId,
+      receptionDate: record.receptionDate,
+      sampleName: record.sampleName,
+      product: record.product,
+      clientName: clientObj?.name || 'Cliente no definido',
+      techName: techObj?.name || 'Analista no asignado',
+      priority: record.priority,
+      status: record.status,
+      cost: record.cost,
+      // Extra: IDs internos para futuras referencias
+      origin: record.origin,
+      provider: record.provider,
+      batch: record.batch
+    });
+  };
+
+  const handleResultsSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRecordForResults) return;
+
+    const updated = { 
+      ...selectedRecordForResults, 
+      results: currentResults, 
+      status: 'Completed' as Status 
+    };
+
+    setAnalyses(analyses.map(a => a.id === updated.id ? updated : a));
+    setShowResultsModal(false);
+
+    // Sincronizar actualización de resultados
+    // Convertimos el objeto de resultados a un string legible para una sola celda del Excel
+    const resultsSummary = Object.entries(currentResults)
+      .map(([id, val]) => {
+        const type = types.find(t => t.id === id);
+        return `${type?.name}: ${val}${type?.unit || ''}`;
+      }).join(' | ');
+
+    syncWithGoogle({
+      action: 'update_results',
+      sampleId: updated.sampleId,
+      status: 'Completed',
+      results: resultsSummary
+    });
   };
 
   const canSee = (tab: typeof activeTab) => {
@@ -459,7 +527,7 @@ const App: React.FC = () => {
                           <td className="px-6 py-4"><div className="flex flex-col"><span className="font-bold text-slate-900 text-sm">{record.sampleName}</span><span className="text-[10px] text-slate-500 font-medium">{record.product}</span></div></td>
                           <td className="px-6 py-4 text-[11px] text-slate-500"><p className="flex items-center gap-1"><Truck size={10} /> {record.provider}</p><p className="flex items-center gap-1"><Globe size={10} /> {record.origin}</p></td>
                           <td className="px-6 py-4"><p className="text-xs font-bold text-slate-700">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{techs.find(t => t.id === record.technicianId)?.name || 'Pendiente'}</p></td>
-                          <td className="px-6 py-4"><div className="flex flex-wrap gap-1 max-w-[180px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${record.results?.[t.id] ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{t.name}</span>))}</div></td>
+                          <td className="px-6 py-4"><div className="flex flex-wrap gap-1 max-w-[180px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${record.results && Object.keys(record.results).length > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{t.name}</span>))}</div></td>
                           <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${record.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{record.status}</span></td>
                           <td className="px-6 py-4 text-right space-x-1 flex justify-end">
                              {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg border border-indigo-100 bg-white"><FlaskConical size={16} /></button>)}
@@ -498,7 +566,7 @@ const App: React.FC = () => {
                 <button onClick={() => setShowAnalysisModal(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={24} /></button>
               </div>
               
-              <form onSubmit={(e) => { e.preventDefault(); const record = { ...newAnalysis, id: `a${Date.now()}`, status: 'Pending', results: {}, comments: "" } as AnalysisRecord; setAnalyses([record, ...analyses]); setShowAnalysisModal(false); syncWithGoogle({ action: 'create', ...record }); }} className="p-10 overflow-y-auto max-h-[80vh]">
+              <form onSubmit={handleRegisterSubmit} className="p-10 overflow-y-auto max-h-[80vh]">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   {/* Columna 1: Información Base */}
                   <div className="space-y-6">
@@ -575,7 +643,7 @@ const App: React.FC = () => {
                         <h3 className="text-xl font-bold">Captura de Resultados: {selectedRecordForResults.sampleId}</h3>
                         <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-green-500 rounded-xl"><X size={20} /></button>
                     </div>
-                    <form onSubmit={(e) => { e.preventDefault(); const updated = { ...selectedRecordForResults, results: currentResults, status: 'Completed' as Status }; setAnalyses(analyses.map(a => a.id === updated.id ? updated : a)); setShowResultsModal(false); syncWithGoogle({ action: 'update_results', ...updated }); }} className="p-8 space-y-6">
+                    <form onSubmit={handleResultsSubmit} className="p-8 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
@@ -593,7 +661,7 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* Modal Reporte (Pre-visualización Simple) */}
+        {/* Modal Reporte */}
         {showReportModal && selectedRecordForReport && (
           <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] overflow-y-auto flex items-center justify-center p-6">
              <div className="bg-white w-full max-w-3xl p-12 rounded-xl relative shadow-2xl">
