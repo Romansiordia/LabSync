@@ -434,6 +434,8 @@ const App: React.FC = () => {
           "Folio": record.sampleId,
           "Muestra": record.sampleName,
           "Producto": record.product,
+          "Procedencia": record.origin || "",
+          "Proveedor": record.provider || "",
           "Lote": record.batch || "",
           "Cliente": selectedClient?.name || "N/A",
           "Técnico": selectedTech?.name || "N/A",
@@ -638,8 +640,8 @@ const App: React.FC = () => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-[11px] space-y-1">
-                              <p className="flex items-center gap-1 text-slate-500"><Truck size={10} /> <span className="font-bold text-slate-700">{record.provider || 'S/P'}</span></p>
-                              <p className="flex items-center gap-1 text-slate-500"><Globe size={10} /> {record.origin || 'N/A'}</p>
+                              <p className="flex items-center gap-1 text-slate-500" title="Proveedor"><Truck size={10} /> <span className="font-bold text-slate-700">{record.provider || 'S/P'}</span></p>
+                              <p className="flex items-center gap-1 text-slate-500" title="Procedencia/Origen"><Globe size={10} /> {record.origin || 'N/A'}</p>
                               <p className="flex items-center gap-1 text-indigo-500 font-bold"><Hash size={10} /> Lote: {record.batch || 'S/L'}</p>
                             </div>
                           </td>
@@ -856,6 +858,10 @@ const App: React.FC = () => {
                       <span className="absolute left-4 top-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha Entrega</span>
                       <input type="date" required className="w-full px-5 pt-6 pb-2 rounded-2xl border font-medium text-slate-700" value={newAnalysis.deliveryDate || ''} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
                    </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <input type="text" placeholder="Procedencia / Origen" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
+                   <input type="text" placeholder="Proveedor" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <input type="text" placeholder="Lote" className="w-full px-5 py-3.5 rounded-2xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
