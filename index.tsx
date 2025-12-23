@@ -329,23 +329,23 @@ const App: React.FC = () => {
       .filter(Boolean)
       .join(', ');
 
-    // SINCRONIZACIÓN: Usamos llaves en español que coincidan con los encabezados más probables del Excel
+    // SINCRONIZACIÓN: Mantenemos los nombres de llaves exactos que espera el script de Google
     syncWithGoogle({
       action: 'create',
-      folio: record.sampleId,
-      fecha_recepcion: record.receptionDate,
-      fecha_entrega: record.deliveryDate,
-      muestra: record.sampleName,
-      producto: record.product,
-      cliente: clientObj?.name || 'No definido',
-      tecnico: techObj?.name || 'No asignado',
-      prioridad: record.priority,
+      sampleId: record.sampleId,
+      receptionDate: record.receptionDate,
+      deliveryDate: record.deliveryDate,
+      sampleName: record.sampleName,
+      product: record.product,
+      clientName: clientObj?.name || 'No definido',
+      techName: techObj?.name || 'No asignado',
+      priority: record.priority,
       status: record.status,
-      costo: record.cost,
-      analisis: analysisNames, // Aquí enviamos los estudios seleccionados
-      procedencia: record.origin,
-      proveedor: record.provider,
-      lote: record.batch
+      cost: record.cost,
+      analisis: analysisNames, // Llave fundamental para la sincronización de estudios
+      origin: record.origin,
+      provider: record.provider,
+      batch: record.batch
     });
   };
 
@@ -370,9 +370,9 @@ const App: React.FC = () => {
 
     syncWithGoogle({
       action: 'update_results',
-      folio: updated.sampleId,
+      sampleId: updated.sampleId,
       status: 'Completed',
-      resultados: resultsSummary
+      results: resultsSummary
     });
   };
 
@@ -541,12 +541,12 @@ const App: React.FC = () => {
                             <div className="flex flex-col">
                               <span className="font-mono text-sm font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg w-fit mb-2 shadow-sm border border-indigo-100">{record.sampleId}</span>
                               <div className="space-y-1.5">
-                                 <div className="flex items-center gap-2 text-[12px] font-black text-slate-600">
-                                    <Calendar size={13} className="text-indigo-400" />
+                                 <div className="flex items-center gap-2 text-[12px] font-black text-slate-700">
+                                    <Calendar size={13} className="text-indigo-600" />
                                     <span>Rec: {record.receptionDate}</span>
                                  </div>
                                  <div className="flex items-center gap-2 text-[12px] font-black text-indigo-600">
-                                    <Clock size={13} className="text-indigo-400" />
+                                    <Clock size={13} className="text-indigo-600" />
                                     <span>Ent: {record.deliveryDate}</span>
                                  </div>
                               </div>
