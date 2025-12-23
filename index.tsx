@@ -155,18 +155,14 @@ const INITIAL_TYPES: AnalysisType[] = [
 ];
 
 const App: React.FC = () => {
-  // --- Estados de Autenticación ---
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('lab_current_user');
     return saved ? JSON.parse(saved) : null;
   });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [isLoginLoading, setIsLoginLoading] = useState(false);
-
-  // --- Estados de Navegación ---
   const [activeTab, setActiveTab] = useState<'dashboard' | 'clients' | 'techs' | 'types' | 'analysis' | 'settings'>('dashboard');
   
-  // --- Estados de Modales ---
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -174,7 +170,6 @@ const App: React.FC = () => {
   const [showTechModal, setShowTechModal] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   
-  // --- Estados de Datos ---
   const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)));
   const [techs, setTechs] = useState<Technician[]>(() => JSON.parse(localStorage.getItem('lab_techs') || JSON.stringify(INITIAL_TECHS)));
   const [types, setTypes] = useState<AnalysisType[]>(() => JSON.parse(localStorage.getItem('lab_types') || JSON.stringify(INITIAL_TYPES)));
@@ -202,7 +197,6 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
-  // --- Persistencia ---
   useEffect(() => {
     localStorage.setItem('lab_clients', JSON.stringify(clients));
     localStorage.setItem('lab_techs', JSON.stringify(techs));
@@ -217,11 +211,9 @@ const App: React.FC = () => {
     }
   }, [clients, techs, types, analyses, products, googleUrl, currentUser]);
 
-  // --- Lógica de Autenticación ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoginLoading(true);
-
     try {
       if (googleUrl) {
          try {
@@ -261,7 +253,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Sincronización Estructurada ---
   const syncWithGoogle = async (payload: any) => {
     if (!googleUrl) return;
     setIsSyncing(true);
@@ -332,17 +323,18 @@ const App: React.FC = () => {
     setAnalyses([record, ...analyses]);
     setShowAnalysisModal(false);
 
-    // Mapeo de nombres de análisis para Google Sheets
+    // Mapeo de nombres legibles para la columna de análisis en Sheets
     const analysisNames = (record.analysisIds || [])
       .map(id => types.find(t => t.id === id)?.name)
       .filter(Boolean)
       .join(', ');
 
+    // Cambiamos 'analysisRequested' a 'analisis' para coincidir con la mayoría de scripts comunes
     syncWithGoogle({
       action: 'create',
       sampleId: record.sampleId,
       receptionDate: record.receptionDate,
-      deliveryDate: record.deliveryDate, // Enviar fecha de entrega
+      deliveryDate: record.deliveryDate,
       sampleName: record.sampleName,
       product: record.product,
       clientName: clientObj?.name || 'Cliente no definido',
@@ -350,7 +342,7 @@ const App: React.FC = () => {
       priority: record.priority,
       status: record.status,
       cost: record.cost,
-      analysisRequested: analysisNames, // Enviar qué análisis están pendientes
+      analisis: analysisNames, 
       origin: record.origin,
       provider: record.provider,
       batch: record.batch
@@ -529,40 +521,46 @@ const App: React.FC = () => {
             <div className="space-y-6 animate-in">
               <div className="flex justify-between items-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                 <div>
-                  <h3 className="text-2xl font-black text-slate-900">Bitácora General</h3>
-                  <p className="text-slate-500 text-sm font-medium">Registro cronológico de muestras y resultados.</p>
+                  <h3 className="text-2xl font-black text-slate-900">Bitácora de Análisis</h3>
+                  <p className="text-slate-500 text-sm font-medium">Gestión y seguimiento de muestras activas.</p>
                 </div>
                 {['Admin', 'Reception'].includes(currentUser.role) && (
-                  <button onClick={() => { setNewAnalysis({...newAnalysis, sampleId: generateNextFolio(), analysisIds: [], cost: 0}); setShowAnalysisModal(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 font-black"><Plus size={20} /> Registrar Muestra</button>
+                  <button onClick={() => { setNewAnalysis({...newAnalysis, sampleId: generateNextFolio(), analysisIds: [], cost: 0}); setShowAnalysisModal(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 font-black"><Plus size={20} /> Nueva Muestra</button>
                 )}
               </div>
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[1200px]">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-black text-slate-500 uppercase tracking-widest"><th className="px-8 py-5">Folio / Fechas</th><th className="px-8 py-5">Muestra & Producto</th><th className="px-8 py-5">Logística</th><th className="px-8 py-5">Cliente / Analista</th><th className="px-8 py-5">Análisis</th><th className="px-8 py-5">Estado</th><th className="px-8 py-5 text-right">Acciones</th></tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-black text-slate-500 uppercase tracking-widest"><th className="px-8 py-5">Folio / Plazos</th><th className="px-8 py-5">Identificación</th><th className="px-8 py-5">Logística</th><th className="px-8 py-5">Asignación</th><th className="px-8 py-5">Estudios</th><th className="px-8 py-5">Estado</th><th className="px-8 py-5 text-right">Acciones</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {analyses.map(record => (
                         <tr key={record.id} className="hover:bg-slate-50/50 transition-colors group">
                           <td className="px-8 py-5">
                             <div className="flex flex-col">
-                              <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg w-fit mb-1">{record.sampleId}</span>
-                              <div className="flex flex-col gap-0.5">
-                                 <span className="text-[9px] text-slate-400 font-bold flex items-center gap-1"><Calendar size={10} /> Rec: {record.receptionDate}</span>
-                                 <span className="text-[9px] text-indigo-400 font-bold flex items-center gap-1"><Clock size={10} /> Ent: {record.deliveryDate}</span>
+                              <span className="font-mono text-sm font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg w-fit mb-2 shadow-sm border border-indigo-100">{record.sampleId}</span>
+                              <div className="space-y-1">
+                                 <div className="flex items-center gap-2 text-[11px] font-black text-slate-500">
+                                    <Calendar size={12} className="text-slate-400" />
+                                    <span>Rec: {record.receptionDate}</span>
+                                 </div>
+                                 <div className="flex items-center gap-2 text-[11px] font-black text-indigo-500">
+                                    <Clock size={12} className="text-indigo-400" />
+                                    <span>Ent: {record.deliveryDate}</span>
+                                 </div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-8 py-5"><div className="flex flex-col"><span className="font-black text-slate-900 text-sm">{record.sampleName}</span><span className="text-[11px] text-slate-500 font-bold">{record.product}</span></div></td>
-                          <td className="px-8 py-5 text-[11px] text-slate-500 font-bold"><p className="flex items-center gap-2 mb-1"><Truck size={12} className="text-slate-400" /> {record.provider}</p><p className="flex items-center gap-2"><Globe size={12} className="text-slate-400" /> {record.origin}</p></td>
-                          <td className="px-8 py-5"><p className="text-xs font-black text-slate-800">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{techs.find(t => t.id === record.technicianId)?.name || 'Sin Asignar'}</p></td>
-                          <td className="px-8 py-5"><div className="flex flex-wrap gap-1.5 max-w-[200px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-2 py-0.5 rounded-md border font-black uppercase tracking-tight ${record.results && Object.keys(record.results).length > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{t.name}</span>))}</div></td>
-                          <td className="px-8 py-5"><span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${record.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{record.status}</span></td>
+                          <td className="px-8 py-5"><div className="flex flex-col"><span className="font-black text-slate-900 text-base">{record.sampleName}</span><span className="text-xs text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-md w-fit mt-1">{record.product}</span></div></td>
+                          <td className="px-8 py-5 text-xs text-slate-600 font-bold"><p className="flex items-center gap-2 mb-1.5"><Truck size={14} className="text-slate-400" /> {record.provider}</p><p className="flex items-center gap-2"><Globe size={14} className="text-slate-400" /> {record.origin}</p></td>
+                          <td className="px-8 py-5"><p className="text-xs font-black text-slate-800">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-indigo-500 font-black uppercase tracking-wider mt-1">{techs.find(t => t.id === record.technicianId)?.name || 'Sin Asignar'}</p></td>
+                          <td className="px-8 py-5"><div className="flex flex-wrap gap-1.5 max-w-[200px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-2 py-1 rounded-md border font-black uppercase tracking-tight ${record.results && Object.keys(record.results).length > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{t.name}</span>))}</div></td>
+                          <td className="px-8 py-5"><span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider border ${record.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : record.status === 'In Progress' ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>{record.status}</span></td>
                           <td className="px-8 py-5 text-right space-x-2 flex justify-end">
-                             {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-2.5 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-100 bg-white transition-all shadow-sm"><FlaskConical size={18} /></button>)}
-                             {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-2.5 hover:bg-slate-800 hover:text-white rounded-xl border border-slate-200 bg-white transition-all shadow-sm"><Printer size={18} /></button>)}
-                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(analyses.filter(a => a.id !== record.id)) }} className="text-red-400 p-2.5 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
+                             {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-3 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-100 bg-white transition-all shadow-sm"><FlaskConical size={18} /></button>)}
+                             {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-3 hover:bg-slate-800 hover:text-white rounded-xl border border-slate-200 bg-white transition-all shadow-sm"><Printer size={18} /></button>)}
+                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(analyses.filter(a => a.id !== record.id)) }} className="text-red-400 p-3 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
                           </td>
                         </tr>
                       ))}
@@ -684,8 +682,8 @@ const App: React.FC = () => {
                        <input type="text" placeholder="Procedencia" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
                        <input type="text" placeholder="Proveedor / Lote" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
                        <div>
-                         <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Fecha de Recepción</label>
-                         <input type="date" className="w-full px-6 py-3 rounded-2xl border border-slate-200" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} />
+                         <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block">Fecha de Recepción *</label>
+                         <input type="date" required className="w-full px-6 py-3 rounded-2xl border border-slate-200 font-bold" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} />
                        </div>
                     </div>
                   </div>
@@ -702,14 +700,14 @@ const App: React.FC = () => {
                           {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                        </select>
                        <div>
-                         <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Fecha Estimada de Entrega</label>
-                         <input type="date" className="w-full px-6 py-3 rounded-2xl border border-slate-200" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
+                         <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block">Compromiso de Entrega *</label>
+                         <input type="date" required className="w-full px-6 py-3 rounded-2xl border border-slate-200 font-bold" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
                        </div>
                        <div className="grid grid-cols-1 gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Prioridad</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Prioridad de Análisis</p>
                           <div className="flex gap-2">
                              {['Normal', 'Urgent', 'Critical'].map(p => (
-                                <button key={p} type="button" onClick={() => setNewAnalysis({...newAnalysis, priority: p as Priority})} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${newAnalysis.priority === p ? (p === 'Normal' ? 'bg-indigo-600 text-white' : p === 'Urgent' ? 'bg-orange-500 text-white' : 'bg-red-600 text-white') : 'bg-white text-slate-400 border border-slate-100'}`}>{p}</button>
+                                <button key={p} type="button" onClick={() => setNewAnalysis({...newAnalysis, priority: p as Priority})} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${newAnalysis.priority === p ? (p === 'Normal' ? 'bg-indigo-600 text-white shadow-md' : p === 'Urgent' ? 'bg-orange-500 text-white shadow-md' : 'bg-red-600 text-white shadow-md') : 'bg-white text-slate-400 border border-slate-100'}`}>{p}</button>
                              ))}
                           </div>
                        </div>
@@ -718,9 +716,9 @@ const App: React.FC = () => {
 
                   <div className="space-y-6">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><FlaskConical size={14} /> Estudios a Realizar</h4>
-                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 max-h-[250px] overflow-y-auto space-y-2">
+                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 max-h-[250px] overflow-y-auto space-y-2 shadow-inner">
                        {types.map(t => (
-                          <label key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
+                          <label key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-[1.02]' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
                              <div className="flex items-center gap-3">
                                 {newAnalysis.analysisIds?.includes(t.id) ? <CheckSquare size={20} /> : <Square size={20} />}
                                 <span className="text-sm font-black">{t.name}</span>
@@ -731,7 +729,7 @@ const App: React.FC = () => {
                        ))}
                     </div>
                     <div className="bg-indigo-50 p-6 rounded-[2rem] border-2 border-indigo-100 flex flex-col items-center">
-                       <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Presupuesto Total</span>
+                       <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Presupuesto Estimado</span>
                        <span className="text-4xl font-black text-indigo-700">${newAnalysis.cost?.toLocaleString()}</span>
                     </div>
                   </div>
@@ -739,49 +737,52 @@ const App: React.FC = () => {
 
                 <div className="mt-12 flex gap-6">
                   <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-5 text-slate-400 font-black border border-slate-100 rounded-3xl hover:bg-slate-50 transition-all uppercase tracking-widest text-xs">Cancelar</button>
-                  <button type="submit" className="flex-[2] py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-2xl shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all uppercase tracking-widest text-xs">Confirmar Registro</button>
+                  <button type="submit" className="flex-[2] py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-2xl shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all uppercase tracking-widest text-xs">Registrar en Bitácora</button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* Modal Resultados */}
+        {/* Modal Captura de Resultados */}
         {showResultsModal && selectedRecordForResults && (
             <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
                 <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
                     <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-emerald-600 text-white">
-                        <div><h3 className="text-2xl font-black">Captura Bromatológica</h3><p className="text-white/70 text-xs font-bold uppercase tracking-wider">Muestra: {selectedRecordForResults.sampleId}</p></div>
+                        <div className="flex items-center gap-4">
+                           <div className="bg-white/20 p-2.5 rounded-xl"><Activity size={24} /></div>
+                           <div><h3 className="text-2xl font-black">Captura de Resultados</h3><p className="text-white/70 text-xs font-bold uppercase tracking-wider">Folio: {selectedRecordForResults.sampleId}</p></div>
+                        </div>
                         <button onClick={() => setShowResultsModal(false)} className="p-3 hover:bg-emerald-500 rounded-2xl"><X size={24} /></button>
                     </div>
                     <form onSubmit={handleResultsSubmit} className="p-10 space-y-8">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">{type.name} ({type.unit})</label>
+                                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{type.name} ({type.unit})</label>
                                     <div className="relative">
-                                       <input type="text" required className="w-full pl-6 pr-14 py-4 rounded-2xl border border-slate-200 focus:border-emerald-500 outline-none font-black text-lg bg-slate-50/50" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
-                                       <span className="absolute right-5 top-4 text-slate-400 font-black">{type.unit}</span>
+                                       <input type="text" required className="w-full pl-6 pr-14 py-4 rounded-2xl border border-slate-200 focus:border-emerald-500 outline-none font-black text-xl bg-slate-50/50" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
+                                       <span className="absolute right-5 top-4.5 text-slate-400 font-black text-sm uppercase">{type.unit}</span>
                                     </div>
                                 </div>
                             ))}
                         </div>
                         <div className="pt-8 flex gap-6">
                             <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-4 text-slate-400 font-black border rounded-2xl uppercase tracking-widest text-[10px]">Cerrar</button>
-                            <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-200 hover:bg-emerald-700 uppercase tracking-widest text-[10px]">Finalizar y Guardar Resultados</button>
+                            <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-200 hover:bg-emerald-700 uppercase tracking-widest text-[10px]">Guardar y Finalizar Análisis</button>
                         </div>
                     </form>
                 </div>
             </div>
         )}
 
-        {/* Modal Reporte */}
+        {/* Modal Reporte Certificado */}
         {showReportModal && selectedRecordForReport && (
           <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[110] overflow-y-auto flex items-center justify-center p-8">
              <div className="bg-white w-full max-w-4xl p-16 rounded-[2rem] relative shadow-2xl">
                 <button onClick={() => setShowReportModal(false)} className="absolute top-10 right-10 p-3 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-all text-slate-500 no-print"><X size={24}/></button>
                 <div className="border-b-4 border-indigo-600 pb-10 mb-12 flex justify-between items-start">
-                   <div><h1 className="text-4xl font-black text-slate-900 mb-2">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Reporte Certificado de Laboratorio</p></div>
+                   <div><h1 className="text-4xl font-black text-slate-900 mb-2">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Certificado de Análisis Laboratorial</p></div>
                    <div className="text-right"><p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1">Folio de Control</p><p className="text-3xl font-black text-indigo-600">{selectedRecordForReport.sampleId}</p></div>
                 </div>
                 <div className="grid grid-cols-2 gap-16 mb-12">
@@ -789,7 +790,7 @@ const App: React.FC = () => {
                    <div className="space-y-4"><div className="bg-slate-50 p-6 rounded-3xl"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Información del Cliente</p><p className="text-xl font-black text-slate-800">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name}</p></div></div>
                 </div>
                 <table className="w-full mb-16">
-                   <thead className="bg-slate-900 text-white"><th className="px-8 py-4 text-left rounded-tl-2xl text-[10px] font-black uppercase tracking-widest">Parámetro Bromatológico</th><th className="px-8 py-4 text-center text-[10px] font-black uppercase tracking-widest">Resultado</th><th className="px-8 py-4 text-left rounded-tr-2xl text-[10px] font-black uppercase tracking-widest">Unidad</th></thead>
+                   <thead className="bg-slate-900 text-white"><tr><th className="px-8 py-4 text-left rounded-tl-2xl text-[10px] font-black uppercase tracking-widest">Parámetro Evaluado</th><th className="px-8 py-4 text-center text-[10px] font-black uppercase tracking-widest">Resultado</th><th className="px-8 py-4 text-left rounded-tr-2xl text-[10px] font-black uppercase tracking-widest">Unidad</th></tr></thead>
                    <tbody className="divide-y divide-slate-100 border-x border-b border-slate-100">
                       {selectedRecordForReport.analysisIds.map(aid => {
                          const type = types.find(t => t.id === aid);
@@ -799,65 +800,71 @@ const App: React.FC = () => {
                 </table>
                 <div className="flex justify-between items-end border-t border-slate-100 pt-10">
                    <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha de Certificación</p><p className="text-sm font-black text-slate-700">{new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
-                   <div className="text-center w-64"><div className="h-px bg-slate-300 w-full mb-4"></div><p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}</p><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Firma Autorizada</p></div>
+                   <div className="text-center w-64"><div className="h-px bg-slate-300 w-full mb-4"></div><p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}</p><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Firma de Validación</p></div>
                 </div>
-                <button onClick={() => window.print()} className="mt-16 w-full py-6 bg-slate-900 text-white font-black rounded-3xl no-print hover:bg-slate-800 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-widest"><Printer size={20}/> Imprimir Reporte Oficial</button>
+                <button onClick={() => window.print()} className="mt-16 w-full py-6 bg-slate-900 text-white font-black rounded-3xl no-print hover:bg-slate-800 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-widest shadow-xl"><Printer size={20}/> Imprimir Reporte de Resultados</button>
              </div>
           </div>
         )}
 
-        {/* Modal Nuevo Cliente */}
+        {/* Modal Clientes */}
         {showClientModal && (
           <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
                 <div className="flex justify-between items-center mb-8">
-                   <h3 className="text-2xl font-black text-slate-900">Añadir Cliente</h3>
-                   <button onClick={() => setShowClientModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                   <h3 className="text-2xl font-black text-slate-900">Nuevo Cliente</h3>
+                   <button onClick={() => setShowClientModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newClient = { id: `c${Date.now()}`, name: target.name.value, contactName: target.contact.value, email: target.email.value, phone: target.phone.value, address: target.address.value }; setClients([...clients, newClient]); setShowClientModal(false); }} className="space-y-4">
-                   <input name="name" required placeholder="Nombre Comercial *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="contact" required placeholder="Persona de Contacto *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="email" type="email" required placeholder="Correo Electrónico *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="phone" placeholder="Teléfono" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="address" placeholder="Dirección Fiscal" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <button type="submit" className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-emerald-200">Guardar Cliente</button>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nc = { id: `c${Date.now()}`, name: target.name.value, contactName: target.contact.value, email: target.email.value, phone: target.phone.value, address: target.address.value }; setClients([...clients, nc]); setShowClientModal(false); }} className="space-y-4">
+                   <div className="space-y-4">
+                      <input name="name" required placeholder="Nombre Comercial o Razón Social *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none font-bold" />
+                      <input name="contact" required placeholder="Persona de Contacto *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                      <input name="email" type="email" required placeholder="Email de Facturación/Reportes *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                      <input name="phone" placeholder="Teléfono" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                      <input name="address" placeholder="Domicilio Fiscal" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   </div>
+                   <button type="submit" className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-emerald-200 hover:bg-emerald-700 transition-all">Registrar Cliente</button>
                 </form>
              </div>
           </div>
         )}
 
-        {/* Modal Nuevo Técnico */}
+        {/* Modal Técnicos */}
         {showTechModal && (
           <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
                 <div className="flex justify-between items-center mb-8">
                    <h3 className="text-2xl font-black text-slate-900">Añadir Analista</h3>
-                   <button onClick={() => setShowTechModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                   <button onClick={() => setShowTechModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newTech = { id: `t${Date.now()}`, name: target.name.value, specialty: target.specialty.value, email: target.email.value, phone: target.phone.value }; setTechs([...techs, newTech]); setShowTechModal(false); }} className="space-y-4">
-                   <input name="name" required placeholder="Nombre Completo *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="specialty" required placeholder="Especialidad *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="email" type="email" required placeholder="Email Institucional *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="phone" placeholder="Teléfono Móvil" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <button type="submit" className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-indigo-200">Guardar Analista</button>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nt = { id: `t${Date.now()}`, name: target.name.value, specialty: target.specialty.value, email: target.email.value, phone: target.phone.value }; setTechs([...techs, nt]); setShowTechModal(false); }} className="space-y-4">
+                   <div className="space-y-4">
+                      <input name="name" required placeholder="Nombre Completo del Analista *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold focus:border-indigo-500 outline-none" />
+                      <input name="specialty" required placeholder="Especialidad (Bromatología, Micotoxinas...) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                      <input name="email" type="email" required placeholder="Email Institucional *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                      <input name="phone" placeholder="Celular" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   </div>
+                   <button type="submit" className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all">Guardar Datos de Personal</button>
                 </form>
              </div>
           </div>
         )}
 
-        {/* Modal Nuevo Estudio */}
+        {/* Modal Catálogo */}
         {showTypeModal && (
           <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
              <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
                 <div className="flex justify-between items-center mb-8">
-                   <h3 className="text-2xl font-black text-slate-900">Configurar Estudio</h3>
-                   <button onClick={() => setShowTypeModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                   <h3 className="text-2xl font-black text-slate-900">Configurar Análisis</h3>
+                   <button onClick={() => setShowTypeModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newType = { id: `at${Date.now()}`, name: target.name.value, baseCost: parseFloat(target.cost.value), unit: target.unit.value }; setTypes([...types, newType]); setShowTypeModal(false); }} className="space-y-4">
-                   <input name="name" required placeholder="Nombre del Análisis *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="unit" required placeholder="Unidad de Medida (%, ppb, ppm) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <input name="cost" type="number" step="0.01" required placeholder="Costo Base ($) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
-                   <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-3xl mt-6 shadow-xl">Guardar en Catálogo</button>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nty = { id: `at${Date.now()}`, name: target.name.value, baseCost: parseFloat(target.cost.value), unit: target.unit.value }; setTypes([...types, nty]); setShowTypeModal(false); }} className="space-y-4">
+                   <div className="space-y-4">
+                      <input name="name" required placeholder="Nombre del Análisis (ej. Proteína) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold focus:border-indigo-500 outline-none" />
+                      <input name="unit" required placeholder="Unidad de Medida (%, ppb, ppm...) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                      <input name="cost" type="number" step="0.01" required placeholder="Costo Base por Muestra ($) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
+                   </div>
+                   <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-3xl mt-6 shadow-xl hover:bg-slate-800 transition-all">Añadir al Catálogo</button>
                 </form>
              </div>
           </div>
