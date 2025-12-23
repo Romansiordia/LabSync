@@ -157,7 +157,6 @@ const INITIAL_TYPES: AnalysisType[] = [
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('lab_current_user');
-    // Cast explicitly to AuthUser to prevent inference issues
     return saved ? (JSON.parse(saved) as AuthUser) : null;
   });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
@@ -171,7 +170,6 @@ const App: React.FC = () => {
   const [showTechModal, setShowTechModal] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   
-  // Ensure typed states for complex arrays from local storage
   const [clients, setClients] = useState<Client[]>(() => (JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)) as Client[]));
   const [techs, setTechs] = useState<Technician[]>(() => (JSON.parse(localStorage.getItem('lab_techs') || JSON.stringify(INITIAL_TECHS)) as Technician[]));
   const [types, setTypes] = useState<AnalysisType[]>(() => (JSON.parse(localStorage.getItem('lab_types') || JSON.stringify(INITIAL_TYPES)) as AnalysisType[]));
@@ -195,9 +193,12 @@ const App: React.FC = () => {
     cost: 0
   });
 
-  const [googleUrl, setGoogleUrl] = useState(() => localStorage.getItem('lab_google_url') || '');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  // DO add explicit string typing to googleUrl state
+  const [googleUrl, setGoogleUrl] = useState<string>(() => localStorage.getItem('lab_google_url') || '');
+  // DO add explicit boolean typing to isSyncing state
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  // DO add explicit string typing to lastSync state
+  const [lastSync, setLastSync] = useState<string>('');
 
   useEffect(() => {
     localStorage.setItem('lab_clients', JSON.stringify(clients));
@@ -246,13 +247,6 @@ const App: React.FC = () => {
       alert("Error en el servidor de autenticación.");
     } finally {
       setIsLoginLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    // Prefix global confirm with window to avoid environment ambiguity
-    if (window.confirm("¿Deseas cerrar la sesión actual?")) {
-      setCurrentUser(null);
     }
   };
 
@@ -319,13 +313,10 @@ const App: React.FC = () => {
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Obtenemos los valores más actuales del estado
     const currentAnalysisIds = newAnalysis.analysisIds || [];
     const clientObj = clients.find(c => c.id === newAnalysis.clientId);
     const techObj = techs.find(t => t.id === newAnalysis.technicianId);
     
-    // Generamos el registro para almacenamiento local
     const record = { 
       ...newAnalysis, 
       id: `a${Date.now()}`, 
@@ -337,15 +328,11 @@ const App: React.FC = () => {
     setAnalyses(prev => [record, ...prev]);
     setShowAnalysisModal(false);
 
-    // Mapeo CRÍTICO de nombres de estudios seleccionados
     const analysisNames = currentAnalysisIds
       .map(id => types.find(t => t.id === id)?.name)
       .filter(Boolean)
       .join(', ');
 
-    console.log("Estudios seleccionados para envío:", analysisNames);
-
-    // SINCRONIZACIÓN: Enviamos el payload con la llave 'analisis'
     syncWithGoogle({
       action: 'create',
       sampleId: record.sampleId,
@@ -358,7 +345,7 @@ const App: React.FC = () => {
       priority: record.priority,
       status: record.status,
       cost: record.cost,
-      analisis: analysisNames, // Aquí viajan los estudios concatenados
+      analisis: analysisNames,
       origin: record.origin,
       provider: record.provider,
       batch: record.batch
@@ -378,12 +365,10 @@ const App: React.FC = () => {
     setAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
     setShowResultsModal(false);
 
-    // Creamos el objeto detallado para mapeo por columnas en Google Sheets
     const detailedResults: Record<string, string> = {};
     Object.entries(currentResults).forEach(([id, val]) => {
       const type = types.find(t => t.id === id);
       if (type) {
-        // Guardamos el valor limpio para que el script lo ponga en su propia columna
         detailedResults[type.name] = val;
       }
     });
@@ -392,7 +377,7 @@ const App: React.FC = () => {
       action: 'update_results',
       sampleId: updated.sampleId,
       status: 'Completed',
-      detailedResults: detailedResults // Enviamos el objeto con nombres reales
+      detailedResults: detailedResults
     });
   };
 
@@ -489,7 +474,8 @@ const App: React.FC = () => {
           <div className="flex items-center gap-6">
              <div className="text-right hidden sm:block">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Última Sincronización</p>
-                <p className="text-xs font-black text-slate-600">{lastSync || '--:--:--'}</p>
+                {/* DO fix: Explicitly cast lastSync to string to avoid unknown type error on line 375 */}
+                <p className="text-xs font-black text-slate-600">{(lastSync as string) || '--:--:--'}</p>
              </div>
              <button onClick={() => syncWithGoogle({action: 'heartbeat'})} className={`p-3 rounded-2xl border transition-all ${isSyncing ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200'}`}>
                 <CloudSync size={24} />
