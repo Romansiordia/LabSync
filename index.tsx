@@ -157,7 +157,8 @@ const INITIAL_TYPES: AnalysisType[] = [
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
     const saved = localStorage.getItem('lab_current_user');
-    return saved ? JSON.parse(saved) : null;
+    // Cast explicitly to AuthUser to prevent inference issues
+    return saved ? (JSON.parse(saved) as AuthUser) : null;
   });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [isLoginLoading, setIsLoginLoading] = useState(false);
@@ -170,11 +171,12 @@ const App: React.FC = () => {
   const [showTechModal, setShowTechModal] = useState(false);
   const [showTypeModal, setShowTypeModal] = useState(false);
   
-  const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)));
-  const [techs, setTechs] = useState<Technician[]>(() => JSON.parse(localStorage.getItem('lab_techs') || JSON.stringify(INITIAL_TECHS)));
-  const [types, setTypes] = useState<AnalysisType[]>(() => JSON.parse(localStorage.getItem('lab_types') || JSON.stringify(INITIAL_TYPES)));
-  const [analyses, setAnalyses] = useState<AnalysisRecord[]>(() => JSON.parse(localStorage.getItem('lab_analyses') || '[]'));
-  const [products, setProducts] = useState<string[]>(() => JSON.parse(localStorage.getItem('lab_products') || JSON.stringify(BASE_PRODUCT_LIST)));
+  // Ensure typed states for complex arrays from local storage
+  const [clients, setClients] = useState<Client[]>(() => (JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)) as Client[]));
+  const [techs, setTechs] = useState<Technician[]>(() => (JSON.parse(localStorage.getItem('lab_techs') || JSON.stringify(INITIAL_TECHS)) as Technician[]));
+  const [types, setTypes] = useState<AnalysisType[]>(() => (JSON.parse(localStorage.getItem('lab_types') || JSON.stringify(INITIAL_TYPES)) as AnalysisType[]));
+  const [analyses, setAnalyses] = useState<AnalysisRecord[]>(() => (JSON.parse(localStorage.getItem('lab_analyses') || '[]') as AnalysisRecord[]));
+  const [products, setProducts] = useState<string[]>(() => (JSON.parse(localStorage.getItem('lab_products') || JSON.stringify(BASE_PRODUCT_LIST)) as string[]));
   
   const [selectedRecordForResults, setSelectedRecordForResults] = useState<AnalysisRecord | null>(null);
   const [selectedRecordForReport, setSelectedRecordForReport] = useState<AnalysisRecord | null>(null);
@@ -248,6 +250,7 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
+    // Prefix global confirm with window to avoid environment ambiguity
     if (window.confirm("¿Deseas cerrar la sesión actual?")) {
       setCurrentUser(null);
     }
@@ -375,17 +378,21 @@ const App: React.FC = () => {
     setAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
     setShowResultsModal(false);
 
-    const resultsSummary = Object.entries(currentResults)
-      .map(([id, val]) => {
-        const type = types.find(t => t.id === id);
-        return `${type?.name}: ${val}${type?.unit || ''}`;
-      }).join(' | ');
+    // Creamos el objeto detallado para mapeo por columnas en Google Sheets
+    const detailedResults: Record<string, string> = {};
+    Object.entries(currentResults).forEach(([id, val]) => {
+      const type = types.find(t => t.id === id);
+      if (type) {
+        // Guardamos el valor limpio para que el script lo ponga en su propia columna
+        detailedResults[type.name] = val;
+      }
+    });
 
     syncWithGoogle({
       action: 'update_results',
       sampleId: updated.sampleId,
       status: 'Completed',
-      results: resultsSummary
+      detailedResults: detailedResults // Enviamos el objeto con nombres reales
     });
   };
 
@@ -573,7 +580,7 @@ const App: React.FC = () => {
                           <td className="px-8 py-5 text-right space-x-2 flex justify-end">
                              {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-3 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-100 bg-white transition-all shadow-sm"><FlaskConical size={18} /></button>)}
                              {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-3 hover:bg-slate-800 hover:text-white rounded-xl border border-slate-200 bg-white transition-all shadow-sm"><Printer size={18} /></button>)}
-                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(prev => prev.filter(a => a.id !== record.id)) }} className="text-red-400 p-3 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
+                             {currentUser.role === 'Admin' && (<button onClick={() => { if(window.confirm("¿Eliminar registro?")) setAnalyses(prev => prev.filter(a => a.id !== record.id)) }} className="text-red-400 p-3 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
                           </td>
                         </tr>
                       ))}
@@ -651,7 +658,7 @@ const App: React.FC = () => {
                         <td className="px-8 py-5 text-center"><span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">{type.unit}</span></td>
                         <td className="px-8 py-5 text-right font-mono font-black text-emerald-600">${type.baseCost.toFixed(2)}</td>
                         <td className="px-8 py-5 text-right">
-                          <button onClick={() => {if(confirm("¿Eliminar estudio?")) setTypes(prev => prev.filter(t => t.id !== type.id))}} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                          <button onClick={() => {if(window.confirm("¿Eliminar estudio?")) setTypes(prev => prev.filter(t => t.id !== type.id))}} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
                         </td>
                       </tr>
                     ))}
