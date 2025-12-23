@@ -97,7 +97,7 @@ const App: React.FC = () => {
   const [googleUrl, setGoogleUrl] = useState(() => localStorage.getItem('lab_google_url') || '');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Estados de datos
+  // Datos locales persistidos
   const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('lab_clients') || '[]'));
   const [techs, setTechs] = useState<Technician[]>(() => JSON.parse(localStorage.getItem('lab_techs') || '[{"id":"t1","name":"Dr. Elena Ramos","specialty":"Bromatología"}]'));
   const [types, setTypes] = useState<AnalysisType[]>(() => JSON.parse(localStorage.getItem('lab_types') || '[]'));
@@ -167,20 +167,17 @@ const App: React.FC = () => {
     setAnalyses([newRecord, ...analyses]);
     setShowAddModal(false);
 
-    // Sync inicial: Crear fila en Sheets
+    // Sync inicial: Crear fila en Sheets (Pendiente)
     const client = clients.find(c => c.id === newRecord.clientId);
-    const technician = techs.find(t => t.id === newRecord.technicianId);
-    
     syncToSheets({
       "Folio": String(newRecord.Folio),
       "Fecha Recepción": newRecord.receptionDate,
       "Muestra": newRecord.sampleName,
       "Producto": newRecord.product,
-      "Cliente": client?.name || 'S/C',
+      "Cliente": client?.name || 'Varios',
       "Estatus": "Pendiente",
       "Costo": newRecord.cost,
-      "Prioridad": newRecord.priority,
-      "Técnico": technician?.name || ''
+      "Prioridad": newRecord.priority
     });
   };
 
@@ -197,24 +194,23 @@ const App: React.FC = () => {
     setAnalyses(updated);
     setShowResultsModal(false);
 
-    // Sync de actualización: Buscamos por Folio y mandamos los análisis
+    // Sync de actualización: Buscamos por Folio y mandamos resultados en sus propias columnas
     const syncData: any = {
       "Folio": String(selectedRecord.Folio),
       "Estatus": "Completado"
     };
 
-    // Cada análisis se convierte en una llave propia para crear su columna
+    // Transformamos cada resultado en una llave única para el script de Google
     Object.entries(tempResults).forEach(([typeId, value]) => {
       const type = types.find(t => t.id === typeId);
       if (type && value !== "") {
-        syncData[type.name] = value;
+        syncData[type.name] = value; // Ej: "Humedad": "12%"
       }
     });
 
     syncToSheets(syncData);
   };
 
-  // --- RenderHelpers ---
   const renderTab = (id: typeof activeTab, icon: any, label: string) => (
     <button onClick={() => setActiveTab(id)} className={`flex items-center gap-3 px-6 py-3 rounded-2xl transition-all font-bold ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}>
       {icon} <span>{label}</span>
@@ -225,7 +221,7 @@ const App: React.FC = () => {
     <div className="flex h-screen bg-slate-50 overflow-hidden text-slate-800 font-sans">
       <aside className="w-72 bg-white border-r border-slate-200 p-8 flex flex-col gap-8 shadow-sm">
         <div className="flex items-center gap-3 text-indigo-600">
-          <div className="bg-indigo-600 text-white p-2 rounded-xl"><Beaker size={28} /></div>
+          <div className="bg-indigo-600 text-white p-2 rounded-xl shadow-lg shadow-indigo-100"><Beaker size={28} /></div>
           <h1 className="text-2xl font-black tracking-tighter">LABSYNC <span className="text-slate-300">PRO</span></h1>
         </div>
         <nav className="flex flex-col gap-2 flex-1">
@@ -245,10 +241,10 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             {isSyncing && (
               <div className="flex items-center gap-2 bg-amber-50 text-amber-600 px-4 py-2 rounded-xl font-black text-[10px] animate-pulse border border-amber-100">
-                <RefreshCw size={12} className="animate-spin"/> SINCRONIZANDO FILA...
+                <RefreshCw size={12} className="animate-spin"/> ACTUALIZANDO NUBE...
               </div>
             )}
-            <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 font-black text-xs border border-indigo-100">UPSERT ACTIVO</div>
+            <div className="bg-indigo-50 px-4 py-2 rounded-xl text-indigo-600 font-black text-xs border border-indigo-100">V. ESTABLE UPSERT</div>
           </div>
         </header>
 
@@ -279,11 +275,16 @@ const App: React.FC = () => {
               </div>
 
               <div className="bg-white p-10 rounded-[2.5rem] border border-slate-100 shadow-sm">
-                <h4 className="text-xl font-black mb-8">Flujo de Análisis</h4>
+                <h4 className="text-xl font-black mb-8">Flujo de Trabajo</h4>
                 <div className="h-64">
                    <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={analyses.slice(-10).reverse()}>
-                        <defs><linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/><stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/></linearGradient></defs>
+                        <defs>
+                          <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
                         <Area type="monotone" dataKey="cost" stroke="#4f46e5" fill="url(#colorCost)" strokeWidth={4} />
                         <Tooltip />
                       </AreaChart>
@@ -298,9 +299,9 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div>
                   <h3 className="text-xl font-black text-slate-900">Bitácora Única</h3>
-                  <p className="text-slate-400 text-[10px] font-black uppercase mt-1">Sincronización de fila única por Folio activa</p>
+                  <p className="text-slate-400 text-[10px] font-black uppercase mt-1">Sincronización por Folio</p>
                 </div>
-                <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-10 py-5 rounded-[1.5rem] font-black flex items-center gap-3 hover:scale-[1.02] transition-all shadow-lg shadow-indigo-100"><Plus size={20}/> Nueva Muestra</button>
+                <button onClick={() => setShowAddModal(true)} className="bg-indigo-600 text-white px-10 py-5 rounded-[1.5rem] font-black flex items-center gap-3 hover:scale-[1.02] transition-all shadow-lg shadow-indigo-100"><Plus size={20}/> Registrar Muestra</button>
               </div>
 
               <div className="bg-white rounded-[2.5rem] shadow-sm border border-slate-200 overflow-hidden">
@@ -308,9 +309,9 @@ const App: React.FC = () => {
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                       <th className="px-10 py-6">Folio</th>
-                      <th className="px-10 py-6">Identificación</th>
+                      <th className="px-10 py-6">Muestra / Producto</th>
                       <th className="px-10 py-6">Estatus</th>
-                      <th className="px-10 py-6">Parámetros</th>
+                      <th className="px-10 py-6">Análisis</th>
                       <th className="px-10 py-6 text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -323,7 +324,7 @@ const App: React.FC = () => {
                           <span className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase border ${a.status === 'Completado' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>{a.status}</span>
                         </td>
                         <td className="px-10 py-6">
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 max-w-xs">
                             {a.analysisIds.map(id => (
                               <span key={id} className="text-[9px] px-2 py-0.5 bg-slate-100 rounded-md font-black text-slate-500 uppercase">{types.find(t => t.id === id)?.name}</span>
                             ))}
@@ -331,7 +332,7 @@ const App: React.FC = () => {
                         </td>
                         <td className="px-10 py-6 text-right">
                           <div className="flex justify-end gap-2">
-                            <button onClick={() => { setSelectedRecord(a); setTempResults(a.results || {}); setShowResultsModal(true); }} className="p-3 bg-white text-indigo-600 border border-slate-100 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><FlaskConical size={18}/></button>
+                            <button onClick={() => { setSelectedRecord(a); setTempResults(a.results || {}); setShowResultsModal(true); }} className="p-3 bg-white text-indigo-600 border border-slate-100 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><FlaskConical size={18}/></button>
                             <button onClick={() => setAnalyses(analyses.filter(x => x.id !== a.id))} className="p-3 bg-white text-slate-300 border border-slate-100 rounded-xl hover:text-red-500 transition-all"><Trash2 size={18}/></button>
                           </div>
                         </td>
@@ -346,16 +347,15 @@ const App: React.FC = () => {
           {activeTab === 'clients' && (
             <div className="grid grid-cols-3 gap-6">
               {clients.map(c => (
-                <div key={c.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                  <div className="bg-indigo-50 w-12 h-12 rounded-2xl flex items-center justify-center text-indigo-600 mb-6"><Users/></div>
+                <div key={c.id} className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all">
+                  <div className="bg-indigo-50 w-12 h-12 rounded-2xl flex items-center justify-center text-indigo-600 mb-6"><Users size={24}/></div>
                   <h4 className="font-black text-lg">{c.name}</h4>
                   <p className="text-slate-400 text-xs font-black uppercase mb-4">{c.contactName}</p>
-                  <p className="text-sm text-slate-500 flex items-center gap-2"><Mail size={14}/> {c.email}</p>
                 </div>
               ))}
               <button onClick={() => {
-                const n = prompt("Nombre:"); if(n) setClients([...clients, {id: Date.now().toString(), name: n, contactName: 'Gerente', email: 'mail@lab.com', phone: '000', address: 'Zona Ind'}]);
-              }} className="border-2 border-dashed border-slate-200 rounded-[2rem] p-8 flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-600 transition-all">
+                const n = prompt("Nombre:"); if(n) setClients([...clients, {id: Date.now().toString(), name: n, contactName: 'Gerente', email: 'mail@lab.com', phone: '000', address: ''}]);
+              }} className="border-2 border-dashed border-slate-200 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-slate-400 hover:text-indigo-600 hover:border-indigo-600 transition-all">
                 <Plus size={32}/><span className="font-black text-xs uppercase mt-2">Nuevo Cliente</span>
               </button>
             </div>
@@ -364,17 +364,21 @@ const App: React.FC = () => {
           {activeTab === 'types' && (
             <div className="space-y-6">
               <button onClick={() => {
-                const n = prompt("Nombre Estudio:");
+                const n = prompt("Nombre del Análisis:");
                 const c = parseFloat(prompt("Costo:") || "0");
                 const u = prompt("Unidad:") || "%";
                 if(n) setTypes([...types, {id: 'at'+Date.now(), name: n, baseCost: c, unit: u}]);
-              }} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2">Definir Análisis</button>
-              <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+              }} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-2 shadow-lg"><Plus size={20}/> Definir Análisis</button>
+              <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                 <table className="w-full text-left">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest"><th className="px-10 py-4">Análisis</th><th className="px-10 py-4">Unidad</th><th className="px-10 py-4 text-right">Costo</th></tr></thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-widest"><th className="px-10 py-4">Estudio</th><th className="px-10 py-4">Unidad</th><th className="px-10 py-4 text-right">Costo</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {types.map(t => (
-                      <tr key={t.id}><td className="px-10 py-4 font-black">{t.name}</td><td className="px-10 py-4 font-bold text-slate-400">{t.unit}</td><td className="px-10 py-4 text-right font-mono font-bold text-emerald-600">${t.baseCost.toFixed(2)}</td></tr>
+                      <tr key={t.id} className="hover:bg-slate-50/50">
+                        <td className="px-10 py-4 font-black">{t.name}</td>
+                        <td className="px-10 py-4 font-bold text-slate-400">{t.unit}</td>
+                        <td className="px-10 py-4 text-right font-mono font-black text-emerald-600">${t.baseCost.toFixed(2)}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
@@ -387,40 +391,36 @@ const App: React.FC = () => {
               <CloudSync className="text-indigo-600 mb-6" size={48}/>
               <h3 className="text-xl font-black mb-4">Configuración de Nube</h3>
               <div className="w-full space-y-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Apps Script URL</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Endpoint URL (Web App)</label>
                 <input type="text" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-mono text-xs focus:ring-4 focus:ring-indigo-100 outline-none" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" />
-                <button onClick={() => alert("Guardado")} className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Guardar Endpoint</button>
+                <button onClick={() => alert("URL Guardada")} className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">Guardar Conexión</button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Modal: Nueva Muestra */}
+        {/* Modales Reusables */}
         {showAddModal && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-[100] flex items-center justify-center p-6 animate-in">
-            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-4xl overflow-hidden border border-white/20">
-              <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-4xl overflow-hidden border border-white/20">
+              <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                 <h3 className="text-2xl font-black">Registrar Muestra</h3>
-                <button onClick={() => setShowAddModal(false)} className="p-2 bg-white rounded-xl shadow-sm"><X/></button>
+                <button onClick={() => setShowAddModal(false)} className="p-3 bg-white rounded-2xl hover:bg-red-50 hover:text-red-500 transition-all shadow-sm"><X/></button>
               </div>
-              <form onSubmit={handleCreateAnalysis} className="p-10 space-y-8">
-                <div className="grid grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <input name="sampleName" required placeholder="ID de la Muestra *" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-bold" />
-                    <select name="product" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-bold">{BASE_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}</select>
-                    <input name="origin" placeholder="Origen" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-medium" />
+              <form onSubmit={handleCreateAnalysis} className="p-10 space-y-10">
+                <div className="grid grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <input name="sampleName" required placeholder="Nombre de Muestra *" className="w-full px-8 py-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 font-black outline-none" />
+                    <select name="product" className="w-full px-8 py-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 font-black outline-none">{BASE_PRODUCTS.map(p => <option key={p} value={p}>{p}</option>)}</select>
                   </div>
-                  <div className="space-y-4">
-                    <select name="clientId" required className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-black"><option value="">Seleccionar Cliente *</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase px-2">Entrega Estimada</label>
-                      <input type="date" name="deliveryDate" required className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-black" />
-                    </div>
+                  <div className="space-y-6">
+                    <select name="clientId" required className="w-full px-8 py-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 font-black outline-none"><option value="">Seleccionar Cliente *</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                    <input type="date" name="deliveryDate" required className="w-full px-8 py-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 font-black outline-none" />
                   </div>
                 </div>
-                <div className="p-8 bg-slate-50 rounded-[2rem] border border-slate-100">
-                  <h5 className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest">Análisis a Realizar</h5>
-                  <div className="grid grid-cols-4 gap-3">
+                <div className="p-10 bg-slate-50 rounded-[2.5rem] border border-slate-100">
+                  <h5 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">Parámetros de Análisis</h5>
+                  <div className="grid grid-cols-4 gap-4">
                     {types.map(t => (
                       <label key={t.id} className="flex items-center gap-3 p-4 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-indigo-400 transition-all font-black text-[10px]">
                         <input type="checkbox" name={`type-${t.id}`} className="w-4 h-4 accent-indigo-600" />
@@ -429,36 +429,35 @@ const App: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">Registrar y Sincronizar en Nube</button>
+                <button type="submit" className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] font-black shadow-2xl hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">Registrar y Crear Fila Única</button>
               </form>
             </div>
           </div>
         )}
 
-        {/* Modal: Resultados */}
         {showResultsModal && selectedRecord && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[110] flex items-center justify-center p-6 animate-in">
-            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-white/20">
-               <div className="p-10 bg-indigo-600 text-white flex justify-between items-center">
+            <div className="bg-white rounded-[3.5rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-white/20">
+               <div className="p-10 bg-indigo-600 text-white flex justify-between items-center shadow-lg">
                   <div>
-                    <h3 className="text-2xl font-black">Captura de Datos</h3>
-                    <p className="font-bold text-indigo-100 text-xs">FOLIO: {selectedRecord.Folio}</p>
+                    <h3 className="text-2xl font-black">Captura de Resultados</h3>
+                    <p className="font-bold text-indigo-100 text-[10px] uppercase tracking-widest">FOLIO: {selectedRecord.Folio}</p>
                   </div>
-                  <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-white/10 rounded-xl transition-all"><X size={24}/></button>
+                  <button onClick={() => setShowResultsModal(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all shadow-sm"><X size={24}/></button>
                </div>
-               <div className="p-10 space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
+               <div className="p-12 space-y-8">
+                  <div className="grid grid-cols-1 gap-6 max-h-[50vh] overflow-y-auto px-2">
                     {selectedRecord.analysisIds.map(aid => {
                       const type = types.find(t => t.id === aid);
                       return (
-                        <div key={aid} className="space-y-2">
-                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-2">{type?.name} ({type?.unit})</label>
-                           <input type="text" className="w-full px-6 py-4 bg-slate-50 rounded-2xl border border-slate-200 font-black text-slate-800" value={tempResults[aid] || ''} onChange={(e) => setTempResults({...tempResults, [aid]: e.target.value})} placeholder="0.00" />
+                        <div key={aid} className="space-y-2 group">
+                           <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-4">{type?.name} ({type?.unit})</label>
+                           <input type="text" className="w-full px-8 py-5 bg-slate-50 rounded-[1.5rem] border border-slate-100 font-black text-lg outline-none pr-20 text-slate-800" value={tempResults[aid] || ''} onChange={(e) => setTempResults({...tempResults, [aid]: e.target.value})} placeholder="0.00" />
                         </div>
                       )
                     })}
                   </div>
-                  <button onClick={handleSaveResults} className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black shadow-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs">
+                  <button onClick={handleSaveResults} className="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black shadow-2xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs">
                     <Save size={18}/> Actualizar Fila en Nube
                   </button>
                </div>
