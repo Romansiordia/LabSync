@@ -323,29 +323,29 @@ const App: React.FC = () => {
     setAnalyses([record, ...analyses]);
     setShowAnalysisModal(false);
 
-    // Mapeo de nombres legibles para la columna de análisis en Sheets
+    // Mapeo de nombres de estudios seleccionados
     const analysisNames = (record.analysisIds || [])
       .map(id => types.find(t => t.id === id)?.name)
       .filter(Boolean)
       .join(', ');
 
-    // Cambiamos 'analysisRequested' a 'analisis' para coincidir con la mayoría de scripts comunes
+    // SINCRONIZACIÓN: Usamos llaves en español que coincidan con los encabezados más probables del Excel
     syncWithGoogle({
       action: 'create',
-      sampleId: record.sampleId,
-      receptionDate: record.receptionDate,
-      deliveryDate: record.deliveryDate,
-      sampleName: record.sampleName,
-      product: record.product,
-      clientName: clientObj?.name || 'Cliente no definido',
-      techName: techObj?.name || 'Analista no asignado',
-      priority: record.priority,
+      folio: record.sampleId,
+      fecha_recepcion: record.receptionDate,
+      fecha_entrega: record.deliveryDate,
+      muestra: record.sampleName,
+      producto: record.product,
+      cliente: clientObj?.name || 'No definido',
+      tecnico: techObj?.name || 'No asignado',
+      prioridad: record.priority,
       status: record.status,
-      cost: record.cost,
-      analisis: analysisNames, 
-      origin: record.origin,
-      provider: record.provider,
-      batch: record.batch
+      costo: record.cost,
+      analisis: analysisNames, // Aquí enviamos los estudios seleccionados
+      procedencia: record.origin,
+      proveedor: record.provider,
+      lote: record.batch
     });
   };
 
@@ -370,9 +370,9 @@ const App: React.FC = () => {
 
     syncWithGoogle({
       action: 'update_results',
-      sampleId: updated.sampleId,
+      folio: updated.sampleId,
       status: 'Completed',
-      results: resultsSummary
+      resultados: resultsSummary
     });
   };
 
@@ -540,13 +540,13 @@ const App: React.FC = () => {
                           <td className="px-8 py-5">
                             <div className="flex flex-col">
                               <span className="font-mono text-sm font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg w-fit mb-2 shadow-sm border border-indigo-100">{record.sampleId}</span>
-                              <div className="space-y-1">
-                                 <div className="flex items-center gap-2 text-[11px] font-black text-slate-500">
-                                    <Calendar size={12} className="text-slate-400" />
+                              <div className="space-y-1.5">
+                                 <div className="flex items-center gap-2 text-[12px] font-black text-slate-600">
+                                    <Calendar size={13} className="text-indigo-400" />
                                     <span>Rec: {record.receptionDate}</span>
                                  </div>
-                                 <div className="flex items-center gap-2 text-[11px] font-black text-indigo-500">
-                                    <Clock size={12} className="text-indigo-400" />
+                                 <div className="flex items-center gap-2 text-[12px] font-black text-indigo-600">
+                                    <Clock size={13} className="text-indigo-400" />
                                     <span>Ent: {record.deliveryDate}</span>
                                  </div>
                               </div>
@@ -682,7 +682,7 @@ const App: React.FC = () => {
                        <input type="text" placeholder="Procedencia" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
                        <input type="text" placeholder="Proveedor / Lote" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
                        <div>
-                         <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block">Fecha de Recepción *</label>
+                         <label className="text-[11px] font-black text-slate-500 uppercase mb-1.5 block">Fecha de Recepción *</label>
                          <input type="date" required className="w-full px-6 py-3 rounded-2xl border border-slate-200 font-bold" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} />
                        </div>
                     </div>
@@ -700,7 +700,7 @@ const App: React.FC = () => {
                           {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                        </select>
                        <div>
-                         <label className="text-[10px] font-black text-slate-500 uppercase mb-1.5 block">Compromiso de Entrega *</label>
+                         <label className="text-[11px] font-black text-slate-500 uppercase mb-1.5 block">Compromiso de Entrega *</label>
                          <input type="date" required className="w-full px-6 py-3 rounded-2xl border border-slate-200 font-bold" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
                        </div>
                        <div className="grid grid-cols-1 gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100">
