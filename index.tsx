@@ -253,7 +253,10 @@ const App: React.FC = () => {
   };
 
   const renderTab = (id: typeof activeTab, icon: React.ReactNode, label: string) => (
-    <button onClick={() => setActiveTab(id)} className={`flex items-center gap-3 px-6 py-3 rounded-2xl transition-all font-bold w-full ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}>
+    <button 
+      onClick={() => setActiveTab(id)} 
+      className={`flex items-center gap-3 px-6 py-3 rounded-2xl transition-all font-bold w-full ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-100'}`}
+    >
       {icon} <span>{label}</span>
     </button>
   );
