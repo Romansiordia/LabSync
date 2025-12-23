@@ -48,7 +48,8 @@ import {
   Info,
   ChevronRight,
   LogOut,
-  KeyRound
+  KeyRound,
+  CloudSync
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -169,6 +170,9 @@ const App: React.FC = () => {
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [showTechModal, setShowTechModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
   
   // --- Estados de Datos ---
   const [clients, setClients] = useState<Client[]>(() => JSON.parse(localStorage.getItem('lab_clients') || JSON.stringify(INITIAL_CLIENTS)));
@@ -196,6 +200,7 @@ const App: React.FC = () => {
 
   const [googleUrl, setGoogleUrl] = useState(() => localStorage.getItem('lab_google_url') || '');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
 
   // --- Persistencia ---
   useEffect(() => {
@@ -266,6 +271,7 @@ const App: React.FC = () => {
         mode: 'no-cors', 
         body: JSON.stringify(payload) 
       });
+      setLastSync(new Date().toLocaleTimeString());
     } catch (error) { 
       console.error("Error sincronizando", error); 
     } finally { 
@@ -326,11 +332,17 @@ const App: React.FC = () => {
     setAnalyses([record, ...analyses]);
     setShowAnalysisModal(false);
 
-    // Enviar a Google de forma estructurada (Mapeo manual para el Excel)
+    // Mapeo de nombres de análisis para Google Sheets
+    const analysisNames = (record.analysisIds || [])
+      .map(id => types.find(t => t.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
+
     syncWithGoogle({
       action: 'create',
       sampleId: record.sampleId,
       receptionDate: record.receptionDate,
+      deliveryDate: record.deliveryDate, // Enviar fecha de entrega
       sampleName: record.sampleName,
       product: record.product,
       clientName: clientObj?.name || 'Cliente no definido',
@@ -338,7 +350,7 @@ const App: React.FC = () => {
       priority: record.priority,
       status: record.status,
       cost: record.cost,
-      // Extra: IDs internos para futuras referencias
+      analysisRequested: analysisNames, // Enviar qué análisis están pendientes
       origin: record.origin,
       provider: record.provider,
       batch: record.batch
@@ -358,8 +370,6 @@ const App: React.FC = () => {
     setAnalyses(analyses.map(a => a.id === updated.id ? updated : a));
     setShowResultsModal(false);
 
-    // Sincronizar actualización de resultados
-    // Convertimos el objeto de resultados a un string legible para una sola celda del Excel
     const resultsSummary = Object.entries(currentResults)
       .map(([id, val]) => {
         const type = types.find(t => t.id === id);
@@ -421,8 +431,8 @@ const App: React.FC = () => {
   const renderSidebarItem = (id: typeof activeTab, icon: React.ReactNode, label: string) => {
     if (!canSee(id)) return null;
     return (
-      <button onClick={() => setActiveTab(id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-        {icon} <span className="font-medium">{label}</span>
+      <button onClick={() => setActiveTab(id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${activeTab === id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+        {icon} <span className="font-bold text-sm">{label}</span>
       </button>
     );
   };
@@ -431,9 +441,9 @@ const App: React.FC = () => {
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0">
         <div className="p-6 flex-1">
-          <div className="flex items-center space-x-3 text-white mb-8">
-            <div className="bg-indigo-600 p-2 rounded-lg"><Beaker size={24} /></div>
-            <span className="text-xl font-bold tracking-tight">LabSync <span className="text-indigo-400">Pro</span></span>
+          <div className="flex items-center space-x-3 text-white mb-10">
+            <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20"><Beaker size={24} /></div>
+            <span className="text-xl font-black tracking-tight">LabSync <span className="text-indigo-400">Pro</span></span>
           </div>
           <nav className="space-y-2">
             {renderSidebarItem('dashboard', <LayoutDashboard size={20} />, 'Dashboard')}
@@ -441,7 +451,7 @@ const App: React.FC = () => {
             {renderSidebarItem('clients', <Users size={20} />, 'Clientes')}
             {renderSidebarItem('techs', <UserIcon size={20} />, 'Técnicos')}
             {renderSidebarItem('types', <Boxes size={20} />, 'Catálogo')}
-            <div className="pt-4 border-t border-slate-800 mt-4">
+            <div className="pt-6 border-t border-slate-800/50 mt-6">
                {renderSidebarItem('settings', <Settings size={20} />, 'Configuración')}
             </div>
           </nav>
@@ -459,11 +469,23 @@ const App: React.FC = () => {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 sticky top-0 z-10 shrink-0">
-          <h2 className="text-xl font-semibold text-slate-800 capitalize">{activeTab}</h2>
+        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-10 sticky top-0 z-10 shrink-0">
+          <div className="flex items-center gap-4">
+             <h2 className="text-2xl font-black text-slate-800 capitalize tracking-tight">{activeTab}</h2>
+             {isSyncing && <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full border border-amber-100 animate-pulse"><RefreshCw size={12} className="animate-spin" /><span className="text-[10px] font-bold">Sincronizando...</span></div>}
+          </div>
+          <div className="flex items-center gap-6">
+             <div className="text-right hidden sm:block">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Última Sincronización</p>
+                <p className="text-xs font-black text-slate-600">{lastSync || '--:--:--'}</p>
+             </div>
+             <button onClick={() => syncWithGoogle({action: 'heartbeat'})} className={`p-3 rounded-2xl border transition-all ${isSyncing ? 'bg-amber-50 border-amber-200 text-amber-500' : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200'}`}>
+                <CloudSync size={24} />
+             </button>
+          </div>
         </header>
 
-        <div className="p-8 overflow-y-auto flex-1">
+        <div className="p-10 overflow-y-auto flex-1">
           {activeTab === 'dashboard' && (
              <div className="space-y-8 animate-in">
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -473,28 +495,28 @@ const App: React.FC = () => {
                  { label: 'Ingresos Pendientes', value: analyses.filter(a => a.status === 'Pending').length, icon: <Clock className="text-orange-600"/>, bg: 'bg-orange-50' },
                  { label: 'Eficiencia Lab', value: `${analyses.length > 0 ? Math.round((stats.completedTests/analyses.length)*100) : 0}%`, icon: <CheckCircle className="text-blue-600"/>, bg: 'bg-blue-50' },
                ].map((card, i) => (
-                 <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-                   <div className="flex justify-between items-start mb-4"><div className={`${card.bg} p-2 rounded-xl`}>{card.icon}</div></div>
-                   <p className="text-slate-500 text-sm font-medium">{card.label}</p>
-                   <h3 className="text-2xl font-bold text-slate-800 mt-1">{card.value}</h3>
+                 <div key={i} className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                   <div className="flex justify-between items-start mb-4"><div className={`${card.bg} p-3 rounded-2xl`}>{card.icon}</div></div>
+                   <p className="text-slate-500 text-xs font-black uppercase tracking-wider">{card.label}</p>
+                   <h3 className="text-3xl font-black text-slate-800 mt-2">{card.value}</h3>
                  </div>
                ))}
              </div>
              {['Admin', 'Reception'].includes(currentUser.role) && (
                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 mb-6"><TrendingUp size={18} className="text-indigo-600" /> Facturación por Cliente</h3>
-                    <div className="h-[300px]">
+                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-800 flex items-center gap-3 mb-8"><TrendingUp size={22} className="text-indigo-600" /> Facturación por Cliente</h3>
+                    <div className="h-[350px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stats.clientStats}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{borderRadius: '12px', border: 'none'}} /><Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} /></BarChart>
+                        <BarChart data={stats.clientStats}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} /><Bar dataKey="value" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={50} /></BarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
-                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-slate-800 mb-6 text-center">Carga por Técnico</h3>
-                    <div className="h-[300px]">
+                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-800 mb-8 text-center flex items-center justify-center gap-3"><Activity size={22} className="text-emerald-500" /> Carga Laboral de Analistas</h3>
+                    <div className="h-[350px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats.techStats}><defs><linearGradient id="colorTests" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip /><Area type="monotone" dataKey="tests" stroke="#10b981" fillOpacity={1} fill="url(#colorTests)" strokeWidth={3} /></AreaChart>
+                        <AreaChart data={stats.techStats}><defs><linearGradient id="colorTests" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} /><Tooltip contentStyle={{borderRadius: '16px', border: 'none'}} /><Area type="monotone" dataKey="tests" stroke="#10b981" fillOpacity={1} fill="url(#colorTests)" strokeWidth={4} /></AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
@@ -505,34 +527,42 @@ const App: React.FC = () => {
 
           {activeTab === 'analysis' && (
             <div className="space-y-6 animate-in">
-              <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex justify-between items-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">Bitácora de Recepción</h3>
-                  <p className="text-slate-500 text-sm">Gestiona y consulta el historial de ingresos.</p>
+                  <h3 className="text-2xl font-black text-slate-900">Bitácora General</h3>
+                  <p className="text-slate-500 text-sm font-medium">Registro cronológico de muestras y resultados.</p>
                 </div>
                 {['Admin', 'Reception'].includes(currentUser.role) && (
-                  <button onClick={() => { setNewAnalysis({...newAnalysis, sampleId: generateNextFolio(), analysisIds: [], cost: 0}); setShowAnalysisModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg font-bold"><Plus size={20} /> Registrar Muestra</button>
+                  <button onClick={() => { setNewAnalysis({...newAnalysis, sampleId: generateNextFolio(), analysisIds: [], cost: 0}); setShowAnalysisModal(true); }} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 font-black"><Plus size={20} /> Registrar Muestra</button>
                 )}
               </div>
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse min-w-[1200px]">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider"><th className="px-6 py-4">Folio</th><th className="px-6 py-4">Muestra</th><th className="px-6 py-4">Logística</th><th className="px-6 py-4">Admón</th><th className="px-6 py-4">Análisis</th><th className="px-6 py-4">Estado</th><th className="px-6 py-4 text-right">Acciones</th></tr>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-xs font-black text-slate-500 uppercase tracking-widest"><th className="px-8 py-5">Folio / Fechas</th><th className="px-8 py-5">Muestra & Producto</th><th className="px-8 py-5">Logística</th><th className="px-8 py-5">Cliente / Analista</th><th className="px-8 py-5">Análisis</th><th className="px-8 py-5">Estado</th><th className="px-8 py-5 text-right">Acciones</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {analyses.map(record => (
                         <tr key={record.id} className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-4"><span className="font-mono text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{record.sampleId}</span></td>
-                          <td className="px-6 py-4"><div className="flex flex-col"><span className="font-bold text-slate-900 text-sm">{record.sampleName}</span><span className="text-[10px] text-slate-500 font-medium">{record.product}</span></div></td>
-                          <td className="px-6 py-4 text-[11px] text-slate-500"><p className="flex items-center gap-1"><Truck size={10} /> {record.provider}</p><p className="flex items-center gap-1"><Globe size={10} /> {record.origin}</p></td>
-                          <td className="px-6 py-4"><p className="text-xs font-bold text-slate-700">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{techs.find(t => t.id === record.technicianId)?.name || 'Pendiente'}</p></td>
-                          <td className="px-6 py-4"><div className="flex flex-wrap gap-1 max-w-[180px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${record.results && Object.keys(record.results).length > 0 ? 'bg-green-100 text-green-700 border-green-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}>{t.name}</span>))}</div></td>
-                          <td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${record.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{record.status}</span></td>
-                          <td className="px-6 py-4 text-right space-x-1 flex justify-end">
-                             {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-2 hover:bg-indigo-50 rounded-lg border border-indigo-100 bg-white"><FlaskConical size={16} /></button>)}
-                             {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-2 hover:bg-slate-100 rounded-lg border border-slate-200 bg-white"><Printer size={16} /></button>)}
-                             {currentUser.role === 'Admin' && (<button onClick={() => setAnalyses(analyses.filter(a => a.id !== record.id))} className="text-red-400 p-2 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>)}
+                          <td className="px-8 py-5">
+                            <div className="flex flex-col">
+                              <span className="font-mono text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg w-fit mb-1">{record.sampleId}</span>
+                              <div className="flex flex-col gap-0.5">
+                                 <span className="text-[9px] text-slate-400 font-bold flex items-center gap-1"><Calendar size={10} /> Rec: {record.receptionDate}</span>
+                                 <span className="text-[9px] text-indigo-400 font-bold flex items-center gap-1"><Clock size={10} /> Ent: {record.deliveryDate}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-5"><div className="flex flex-col"><span className="font-black text-slate-900 text-sm">{record.sampleName}</span><span className="text-[11px] text-slate-500 font-bold">{record.product}</span></div></td>
+                          <td className="px-8 py-5 text-[11px] text-slate-500 font-bold"><p className="flex items-center gap-2 mb-1"><Truck size={12} className="text-slate-400" /> {record.provider}</p><p className="flex items-center gap-2"><Globe size={12} className="text-slate-400" /> {record.origin}</p></td>
+                          <td className="px-8 py-5"><p className="text-xs font-black text-slate-800">{clients.find(c => c.id === record.clientId)?.name || 'General'}</p><p className="text-[10px] text-slate-400 font-black uppercase tracking-wider">{techs.find(t => t.id === record.technicianId)?.name || 'Sin Asignar'}</p></td>
+                          <td className="px-8 py-5"><div className="flex flex-wrap gap-1.5 max-w-[200px]">{types.filter(t => (record.analysisIds || []).includes(t.id)).map(t => (<span key={t.id} className={`text-[9px] px-2 py-0.5 rounded-md border font-black uppercase tracking-tight ${record.results && Object.keys(record.results).length > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'}`}>{t.name}</span>))}</div></td>
+                          <td className="px-8 py-5"><span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${record.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : record.status === 'In Progress' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{record.status}</span></td>
+                          <td className="px-8 py-5 text-right space-x-2 flex justify-end">
+                             {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-2.5 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-100 bg-white transition-all shadow-sm"><FlaskConical size={18} /></button>)}
+                             {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-2.5 hover:bg-slate-800 hover:text-white rounded-xl border border-slate-200 bg-white transition-all shadow-sm"><Printer size={18} /></button>)}
+                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(analyses.filter(a => a.id !== record.id)) }} className="text-red-400 p-2.5 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
                           </td>
                         </tr>
                       ))}
@@ -543,12 +573,90 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'clients' && (
+            <div className="space-y-6 animate-in">
+              <div className="flex justify-between items-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div><h3 className="text-2xl font-black text-slate-900">Directorio de Clientes</h3><p className="text-slate-500 text-sm font-medium">Administra la base de datos de cuentas comerciales.</p></div>
+                {currentUser.role === 'Admin' && <button onClick={() => setShowClientModal(true)} className="bg-emerald-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-200 font-black"><Plus size={20} /> Nuevo Cliente</button>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {clients.map(client => (
+                  <div key={client.id} className="bg-white p-6 rounded-3xl border border-slate-200 hover:shadow-lg transition-all">
+                    <div className="flex justify-between items-start mb-4">
+                       <div className="bg-indigo-50 p-3 rounded-2xl text-indigo-600"><Users size={24} /></div>
+                       {currentUser.role === 'Admin' && <button onClick={() => setClients(clients.filter(c => c.id !== client.id))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18} /></button>}
+                    </div>
+                    <h4 className="text-lg font-black text-slate-900">{client.name}</h4>
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">{client.contactName}</p>
+                    <div className="mt-6 space-y-2">
+                       <div className="flex items-center gap-3 text-slate-600 text-sm font-medium"><Mail size={16} className="text-slate-400" /> {client.email}</div>
+                       <div className="flex items-center gap-3 text-slate-600 text-sm font-medium"><Phone size={16} className="text-slate-400" /> {client.phone}</div>
+                       <div className="flex items-center gap-3 text-slate-600 text-sm font-medium"><MapPin size={16} className="text-slate-400" /> {client.address}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'techs' && (
+            <div className="space-y-6 animate-in">
+              <div className="flex justify-between items-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div><h3 className="text-2xl font-black text-slate-900">Personal Técnico</h3><p className="text-slate-500 text-sm font-medium">Analistas y laboratoristas responsables.</p></div>
+                {currentUser.role === 'Admin' && <button onClick={() => setShowTechModal(true)} className="bg-indigo-600 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-indigo-700 transition-all font-black shadow-xl shadow-indigo-200"><Plus size={20} /> Añadir Técnico</button>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {techs.map(tech => (
+                  <div key={tech.id} className="bg-white p-8 rounded-3xl border border-slate-200 hover:shadow-xl transition-all text-center">
+                    <div className="flex justify-end">{currentUser.role === 'Admin' && <button onClick={() => setTechs(techs.filter(t => t.id !== tech.id))} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={16}/></button>}</div>
+                    <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto mb-6 text-indigo-600"><UserIcon size={40} /></div>
+                    <h4 className="text-xl font-black text-slate-900">{tech.name}</h4>
+                    <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest rounded-full mt-2">{tech.specialty}</span>
+                    <div className="mt-8 pt-6 border-t border-slate-50 flex justify-center gap-4">
+                       <button className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-indigo-600 transition-all"><Mail size={20}/></button>
+                       <button className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-indigo-600 transition-all"><Phone size={20}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'types' && (
+            <div className="space-y-6 animate-in">
+              <div className="flex justify-between items-center bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <div><h3 className="text-2xl font-black text-slate-900">Catálogo de Análisis</h3><p className="text-slate-500 text-sm font-medium">Estudios disponibles y costos unitarios.</p></div>
+                {currentUser.role === 'Admin' && <button onClick={() => setShowTypeModal(true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl flex items-center gap-3 hover:bg-slate-800 transition-all font-black shadow-xl"><Plus size={20} /> Nuevo Estudio</button>}
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-xs font-black text-slate-500 uppercase tracking-widest"><th className="px-8 py-5">Nombre del Estudio</th><th className="px-8 py-5 text-center">Unidad</th><th className="px-8 py-5 text-right">Costo Base</th><th className="px-8 py-5 text-right">Acciones</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {types.map(type => (
+                      <tr key={type.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-8 py-5 font-black text-slate-800">{type.name}</td>
+                        <td className="px-8 py-5 text-center"><span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">{type.unit}</span></td>
+                        <td className="px-8 py-5 text-right font-mono font-black text-emerald-600">${type.baseCost.toFixed(2)}</td>
+                        <td className="px-8 py-5 text-right">
+                          <button onClick={() => {if(confirm("¿Eliminar estudio?")) setTypes(types.filter(t => t.id !== type.id))}} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'settings' && currentUser.role === 'Admin' && (
              <div className="max-w-2xl mx-auto space-y-6">
-                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-                   <div className="flex items-center gap-4 mb-6"><div className="bg-indigo-600 p-3 rounded-2xl text-white"><Zap size={24} /></div><h3 className="text-xl font-bold text-slate-900">Enlace con Google Sheets</h3></div>
-                   <input type="text" placeholder="URL de Google Apps Script" className="w-full px-5 py-4 rounded-2xl border border-slate-200 outline-none font-mono text-sm bg-slate-50 focus:ring-2 focus:ring-indigo-500 mb-4" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} />
-                   <button onClick={() => alert("URL Guardada")} className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all shadow-xl">Guardar Configuración</button>
+                <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+                   <div className="flex items-center gap-5 mb-8"><div className="bg-indigo-600 p-4 rounded-2xl text-white shadow-lg shadow-indigo-600/20"><Zap size={28} /></div><h3 className="text-2xl font-black text-slate-900">Enlace con Google Sheets</h3></div>
+                   <p className="text-slate-500 text-sm font-medium mb-6">Pega aquí la URL de tu implementación de Google Apps Script para sincronizar con tu base de datos central en la nube.</p>
+                   <input type="text" placeholder="https://script.google.com/macros/s/..." className="w-full px-6 py-4 rounded-2xl border border-slate-200 outline-none font-mono text-sm bg-slate-50 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 mb-6 transition-all" value={googleUrl} onChange={(e) => setGoogleUrl(e.target.value)} />
+                   <button onClick={() => alert("URL Guardada Correctamente")} className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200 flex items-center justify-center gap-3"><Save size={20}/> Guardar Cambios</button>
                 </div>
              </div>
           )}
@@ -556,79 +664,82 @@ const App: React.FC = () => {
 
         {/* --- MODALES --- */}
         {showAnalysisModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in">
-              <div className="px-10 py-6 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
-                <div className="flex items-center gap-3">
-                   <div className="bg-white/20 p-2 rounded-xl"><Plus size={24} /></div>
-                   <h3 className="text-2xl font-bold">Nueva Muestra ({newAnalysis.sampleId})</h3>
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl overflow-hidden animate-in">
+              <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-indigo-600 text-white">
+                <div className="flex items-center gap-4">
+                   <div className="bg-white/20 p-3 rounded-2xl"><Plus size={28} /></div>
+                   <div><h3 className="text-2xl font-black">Registro de Muestra</h3><p className="text-white/70 text-xs font-bold uppercase tracking-wider">Folio: {newAnalysis.sampleId}</p></div>
                 </div>
-                <button onClick={() => setShowAnalysisModal(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={24} /></button>
+                <button onClick={() => setShowAnalysisModal(false)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
               </div>
               
-              <form onSubmit={handleRegisterSubmit} className="p-10 overflow-y-auto max-h-[80vh]">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {/* Columna 1: Información Base */}
+              <form onSubmit={handleRegisterSubmit} className="p-10 overflow-y-auto max-h-[75vh]">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
                   <div className="space-y-6">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} /> Datos de Identificación</h4>
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><Info size={14} /> Logística de Recepción</h4>
                     <div className="space-y-4">
-                       <input type="text" required placeholder="Nombre de la Muestra *" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none font-bold text-slate-700" value={newAnalysis.sampleName || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleName: e.target.value})} />
-                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold text-slate-700" value={newAnalysis.product} onChange={(e) => setNewAnalysis({...newAnalysis, product: e.target.value})}>{products.map(p => <option key={p} value={p}>{p}</option>)}</select>
-                       <input type="text" placeholder="Procedencia" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
-                       <input type="text" placeholder="Proveedor" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
-                       <input type="text" placeholder="Lote" className="w-full px-4 py-3 rounded-xl border" value={newAnalysis.batch || ''} onChange={(e) => setNewAnalysis({...newAnalysis, batch: e.target.value})} />
-                    </div>
-                  </div>
-
-                  {/* Columna 2: Logística y Asignación */}
-                  <div className="space-y-6">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><UserIcon size={14} /> Administración</h4>
-                    <div className="space-y-4">
-                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.clientId} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
-                          <option value="">Seleccionar Cliente *</option>
-                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                       </select>
-                       <select required className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.technicianId} onChange={(e) => setNewAnalysis({...newAnalysis, technicianId: e.target.value})}>
-                          <option value="">Asignar Técnico *</option>
-                          {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                       </select>
-                       <select className="w-full px-4 py-3 rounded-xl border bg-white font-bold" value={newAnalysis.priority} onChange={(e) => setNewAnalysis({...newAnalysis, priority: e.target.value as Priority})}>
-                          <option value="Normal">Prioridad Normal</option>
-                          <option value="Urgent">Prioridad Urgente</option>
-                          <option value="Critical">Prioridad Crítica</option>
-                       </select>
-                       <div className="grid grid-cols-2 gap-4">
-                          <div><label className="text-[10px] font-bold text-slate-400 block mb-1">RECEPCIÓN</label><input type="date" className="w-full px-3 py-2 rounded-lg border text-sm" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} /></div>
-                          <div><label className="text-[10px] font-bold text-slate-400 block mb-1">ENTREGA</label><input type="date" className="w-full px-3 py-2 rounded-lg border text-sm" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} /></div>
+                       <div className="relative"><input type="text" required placeholder="Nombre de la Muestra *" className="w-full pl-12 pr-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none font-black text-slate-700 bg-slate-50/50" value={newAnalysis.sampleName || ''} onChange={(e) => setNewAnalysis({...newAnalysis, sampleName: e.target.value})} /><Beaker className="absolute left-4 top-4 text-slate-400" size={18}/></div>
+                       <select required className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-white font-black text-slate-700" value={newAnalysis.product} onChange={(e) => setNewAnalysis({...newAnalysis, product: e.target.value})}>{products.map(p => <option key={p} value={p}>{p}</option>)}</select>
+                       <input type="text" placeholder="Procedencia" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.origin || ''} onChange={(e) => setNewAnalysis({...newAnalysis, origin: e.target.value})} />
+                       <input type="text" placeholder="Proveedor / Lote" className="w-full px-6 py-4 rounded-2xl border border-slate-200" value={newAnalysis.provider || ''} onChange={(e) => setNewAnalysis({...newAnalysis, provider: e.target.value})} />
+                       <div>
+                         <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Fecha de Recepción</label>
+                         <input type="date" className="w-full px-6 py-3 rounded-2xl border border-slate-200" value={newAnalysis.receptionDate} onChange={(e) => setNewAnalysis({...newAnalysis, receptionDate: e.target.value})} />
                        </div>
                     </div>
                   </div>
 
-                  {/* Columna 3: Análisis y Costo */}
                   <div className="space-y-6">
-                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FlaskConical size={14} /> Estudios Solicitados</h4>
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-[300px] overflow-y-auto space-y-2">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><UserIcon size={14} /> Asignación y Prioridad</h4>
+                    <div className="space-y-4">
+                       <select required className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-white font-black" value={newAnalysis.clientId} onChange={(e) => setNewAnalysis({...newAnalysis, clientId: e.target.value})}>
+                          <option value="">Seleccionar Cliente *</option>
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                       </select>
+                       <select required className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-white font-black" value={newAnalysis.technicianId} onChange={(e) => setNewAnalysis({...newAnalysis, technicianId: e.target.value})}>
+                          <option value="">Analista Responsable *</option>
+                          {techs.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                       </select>
+                       <div>
+                         <label className="text-[9px] font-black text-slate-400 uppercase mb-1 block">Fecha Estimada de Entrega</label>
+                         <input type="date" className="w-full px-6 py-3 rounded-2xl border border-slate-200" value={newAnalysis.deliveryDate} onChange={(e) => setNewAnalysis({...newAnalysis, deliveryDate: e.target.value})} />
+                       </div>
+                       <div className="grid grid-cols-1 gap-2 p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">Prioridad</p>
+                          <div className="flex gap-2">
+                             {['Normal', 'Urgent', 'Critical'].map(p => (
+                                <button key={p} type="button" onClick={() => setNewAnalysis({...newAnalysis, priority: p as Priority})} className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${newAnalysis.priority === p ? (p === 'Normal' ? 'bg-indigo-600 text-white' : p === 'Urgent' ? 'bg-orange-500 text-white' : 'bg-red-600 text-white') : 'bg-white text-slate-400 border border-slate-100'}`}>{p}</button>
+                             ))}
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><FlaskConical size={14} /> Estudios a Realizar</h4>
+                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 max-h-[250px] overflow-y-auto space-y-2">
                        {types.map(t => (
-                          <label key={t.id} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
+                          <label key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
                              <div className="flex items-center gap-3">
-                                {newAnalysis.analysisIds?.includes(t.id) ? <CheckSquare size={18} /> : <Square size={18} />}
-                                <span className="text-sm font-bold">{t.name}</span>
+                                {newAnalysis.analysisIds?.includes(t.id) ? <CheckSquare size={20} /> : <Square size={20} />}
+                                <span className="text-sm font-black">{t.name}</span>
                              </div>
                              <input type="checkbox" className="hidden" checked={newAnalysis.analysisIds?.includes(t.id)} onChange={() => toggleAnalysis(t.id)} />
-                             <span className="text-xs opacity-70">${t.baseCost}</span>
+                             <span className="text-[10px] font-black opacity-70 tracking-widest">${t.baseCost}</span>
                           </label>
                        ))}
                     </div>
-                    <div className="bg-indigo-50 p-6 rounded-2xl border-2 border-indigo-100 flex flex-col items-center">
-                       <span className="text-xs font-bold text-indigo-400 uppercase mb-1">Costo Total Estimado</span>
-                       <span className="text-3xl font-black text-indigo-700">${newAnalysis.cost?.toLocaleString()}</span>
+                    <div className="bg-indigo-50 p-6 rounded-[2rem] border-2 border-indigo-100 flex flex-col items-center">
+                       <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Presupuesto Total</span>
+                       <span className="text-4xl font-black text-indigo-700">${newAnalysis.cost?.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-10 pt-8 border-t border-slate-100 flex gap-4">
-                  <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-4 text-slate-600 font-bold border rounded-2xl hover:bg-slate-50 transition-all">Cancelar</button>
-                  <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 active:scale-[0.98] transition-all">Confirmar y Guardar Registro</button>
+                <div className="mt-12 flex gap-6">
+                  <button type="button" onClick={() => setShowAnalysisModal(false)} className="flex-1 py-5 text-slate-400 font-black border border-slate-100 rounded-3xl hover:bg-slate-50 transition-all uppercase tracking-widest text-xs">Cancelar</button>
+                  <button type="submit" className="flex-[2] py-5 bg-indigo-600 text-white font-black rounded-3xl shadow-2xl shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all uppercase tracking-widest text-xs">Confirmar Registro</button>
                 </div>
               </form>
             </div>
@@ -637,24 +748,27 @@ const App: React.FC = () => {
 
         {/* Modal Resultados */}
         {showResultsModal && selectedRecordForResults && (
-            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
-                    <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-green-600 text-white">
-                        <h3 className="text-xl font-bold">Captura de Resultados: {selectedRecordForResults.sampleId}</h3>
-                        <button onClick={() => setShowResultsModal(false)} className="p-2 hover:bg-green-500 rounded-xl"><X size={20} /></button>
+            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+                <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-2xl overflow-hidden animate-in">
+                    <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-emerald-600 text-white">
+                        <div><h3 className="text-2xl font-black">Captura Bromatológica</h3><p className="text-white/70 text-xs font-bold uppercase tracking-wider">Muestra: {selectedRecordForResults.sampleId}</p></div>
+                        <button onClick={() => setShowResultsModal(false)} className="p-3 hover:bg-emerald-500 rounded-2xl"><X size={24} /></button>
                     </div>
-                    <form onSubmit={handleResultsSubmit} className="p-8 space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <form onSubmit={handleResultsSubmit} className="p-10 space-y-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             {types.filter(t => selectedRecordForResults.analysisIds.includes(t.id)).map(type => (
                                 <div key={type.id}>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">{type.name} ({type.unit})</label>
-                                    <input type="text" className="w-full px-4 py-3 rounded-xl border focus:border-indigo-500 outline-none font-bold" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">{type.name} ({type.unit})</label>
+                                    <div className="relative">
+                                       <input type="text" required className="w-full pl-6 pr-14 py-4 rounded-2xl border border-slate-200 focus:border-emerald-500 outline-none font-black text-lg bg-slate-50/50" value={currentResults[type.id] || ''} onChange={(e) => setCurrentResults({...currentResults, [type.id]: e.target.value})} />
+                                       <span className="absolute right-5 top-4 text-slate-400 font-black">{type.unit}</span>
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                        <div className="pt-6 flex gap-4">
-                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-3 text-slate-600 font-bold border rounded-xl">Cerrar</button>
-                            <button type="submit" className="flex-[2] py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700">Guardar y Finalizar</button>
+                        <div className="pt-8 flex gap-6">
+                            <button type="button" onClick={() => setShowResultsModal(false)} className="flex-1 py-4 text-slate-400 font-black border rounded-2xl uppercase tracking-widest text-[10px]">Cerrar</button>
+                            <button type="submit" className="flex-[2] py-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl shadow-emerald-200 hover:bg-emerald-700 uppercase tracking-widest text-[10px]">Finalizar y Guardar Resultados</button>
                         </div>
                     </form>
                 </div>
@@ -663,28 +777,88 @@ const App: React.FC = () => {
 
         {/* Modal Reporte */}
         {showReportModal && selectedRecordForReport && (
-          <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[110] overflow-y-auto flex items-center justify-center p-6">
-             <div className="bg-white w-full max-w-3xl p-12 rounded-xl relative shadow-2xl">
-                <button onClick={() => setShowReportModal(false)} className="absolute top-6 right-6 p-2 bg-slate-100 rounded-full"><X size={20}/></button>
-                <div className="border-b-2 border-indigo-600 pb-6 mb-8 flex justify-between">
-                   <div><h1 className="text-2xl font-black">LabSync Pro</h1><p className="text-xs text-slate-500">REPORTE DE LABORATORIO</p></div>
-                   <div className="text-right"><p className="text-xl font-bold text-indigo-600">FOLIO: {selectedRecordForReport.sampleId}</p></div>
+          <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-xl z-[110] overflow-y-auto flex items-center justify-center p-8">
+             <div className="bg-white w-full max-w-4xl p-16 rounded-[2rem] relative shadow-2xl">
+                <button onClick={() => setShowReportModal(false)} className="absolute top-10 right-10 p-3 bg-slate-100 rounded-2xl hover:bg-slate-200 transition-all text-slate-500 no-print"><X size={24}/></button>
+                <div className="border-b-4 border-indigo-600 pb-10 mb-12 flex justify-between items-start">
+                   <div><h1 className="text-4xl font-black text-slate-900 mb-2">LabSync <span className="text-indigo-600">Pro</span></h1><p className="text-[10px] font-black text-slate-400 tracking-[0.3em] uppercase">Reporte Certificado de Laboratorio</p></div>
+                   <div className="text-right"><p className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1">Folio de Control</p><p className="text-3xl font-black text-indigo-600">{selectedRecordForReport.sampleId}</p></div>
                 </div>
-                <div className="grid grid-cols-2 gap-8 mb-8 text-sm">
-                   <div><p className="text-slate-400 font-bold mb-1">MUESTRA / PRODUCTO</p><p className="font-bold">{selectedRecordForReport.sampleName} - {selectedRecordForReport.product}</p></div>
-                   <div><p className="text-slate-400 font-bold mb-1">CLIENTE</p><p className="font-bold">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name}</p></div>
+                <div className="grid grid-cols-2 gap-16 mb-12">
+                   <div className="space-y-4"><div className="bg-slate-50 p-6 rounded-3xl"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Descripción de la Muestra</p><p className="text-xl font-black text-slate-800">{selectedRecordForReport.sampleName}</p><p className="text-sm font-bold text-slate-500 mt-1">{selectedRecordForReport.product}</p></div></div>
+                   <div className="space-y-4"><div className="bg-slate-50 p-6 rounded-3xl"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Información del Cliente</p><p className="text-xl font-black text-slate-800">{clients.find(c => c.id === selectedRecordForReport.clientId)?.name}</p></div></div>
                 </div>
-                <table className="w-full mb-12">
-                   <thead className="bg-slate-50 text-xs font-bold text-slate-500 uppercase border-b border-slate-200"><th className="px-4 py-3 text-left">Parámetro</th><th className="px-4 py-3 text-right">Resultado</th><th className="px-4 py-3 text-left">Unidad</th></thead>
-                   <tbody>
+                <table className="w-full mb-16">
+                   <thead className="bg-slate-900 text-white"><th className="px-8 py-4 text-left rounded-tl-2xl text-[10px] font-black uppercase tracking-widest">Parámetro Bromatológico</th><th className="px-8 py-4 text-center text-[10px] font-black uppercase tracking-widest">Resultado</th><th className="px-8 py-4 text-left rounded-tr-2xl text-[10px] font-black uppercase tracking-widest">Unidad</th></thead>
+                   <tbody className="divide-y divide-slate-100 border-x border-b border-slate-100">
                       {selectedRecordForReport.analysisIds.map(aid => {
                          const type = types.find(t => t.id === aid);
-                         return (<tr key={aid} className="border-b border-slate-100"><td className="px-4 py-3 font-bold">{type?.name}</td><td className="px-4 py-3 text-right font-mono font-black">{selectedRecordForReport.results?.[aid] || '---'}</td><td className="px-4 py-3 text-xs text-slate-500">{type?.unit}</td></tr>);
+                         return (<tr key={aid} className="hover:bg-slate-50/30 transition-colors"><td className="px-8 py-6 font-black text-slate-800">{type?.name}</td><td className="px-8 py-6 text-center font-mono text-2xl font-black text-indigo-600">{selectedRecordForReport.results?.[aid] || '---'}</td><td className="px-8 py-6 text-xs font-black text-slate-400 uppercase tracking-widest">{type?.unit}</td></tr>);
                       })}
                    </tbody>
                 </table>
-                <div className="flex justify-between items-end"><div className="text-xs text-slate-400">Fecha de Emisión: {new Date().toLocaleDateString()}</div><div className="text-center border-t border-slate-300 pt-2 w-48 text-xs font-bold">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}<br/>Analista Responsable</div></div>
-                <button onClick={() => window.print()} className="mt-10 w-full py-4 bg-slate-900 text-white font-bold rounded-xl no-print">Imprimir Documento</button>
+                <div className="flex justify-between items-end border-t border-slate-100 pt-10">
+                   <div className="space-y-1"><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fecha de Certificación</p><p className="text-sm font-black text-slate-700">{new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
+                   <div className="text-center w-64"><div className="h-px bg-slate-300 w-full mb-4"></div><p className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-1">{techs.find(t => t.id === selectedRecordForReport.technicianId)?.name}</p><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Firma Autorizada</p></div>
+                </div>
+                <button onClick={() => window.print()} className="mt-16 w-full py-6 bg-slate-900 text-white font-black rounded-3xl no-print hover:bg-slate-800 transition-all flex items-center justify-center gap-4 text-xs uppercase tracking-widest"><Printer size={20}/> Imprimir Reporte Oficial</button>
+             </div>
+          </div>
+        )}
+
+        {/* Modal Nuevo Cliente */}
+        {showClientModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
+                <div className="flex justify-between items-center mb-8">
+                   <h3 className="text-2xl font-black text-slate-900">Añadir Cliente</h3>
+                   <button onClick={() => setShowClientModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                </div>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newClient = { id: `c${Date.now()}`, name: target.name.value, contactName: target.contact.value, email: target.email.value, phone: target.phone.value, address: target.address.value }; setClients([...clients, newClient]); setShowClientModal(false); }} className="space-y-4">
+                   <input name="name" required placeholder="Nombre Comercial *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="contact" required placeholder="Persona de Contacto *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="email" type="email" required placeholder="Correo Electrónico *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="phone" placeholder="Teléfono" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="address" placeholder="Dirección Fiscal" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <button type="submit" className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-emerald-200">Guardar Cliente</button>
+                </form>
+             </div>
+          </div>
+        )}
+
+        {/* Modal Nuevo Técnico */}
+        {showTechModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
+                <div className="flex justify-between items-center mb-8">
+                   <h3 className="text-2xl font-black text-slate-900">Añadir Analista</h3>
+                   <button onClick={() => setShowTechModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                </div>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newTech = { id: `t${Date.now()}`, name: target.name.value, specialty: target.specialty.value, email: target.email.value, phone: target.phone.value }; setTechs([...techs, newTech]); setShowTechModal(false); }} className="space-y-4">
+                   <input name="name" required placeholder="Nombre Completo *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="specialty" required placeholder="Especialidad *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="email" type="email" required placeholder="Email Institucional *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="phone" placeholder="Teléfono Móvil" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <button type="submit" className="w-full py-5 bg-indigo-600 text-white font-black rounded-3xl mt-6 shadow-xl shadow-indigo-200">Guardar Analista</button>
+                </form>
+             </div>
+          </div>
+        )}
+
+        {/* Modal Nuevo Estudio */}
+        {showTypeModal && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+             <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-lg p-10 animate-in">
+                <div className="flex justify-between items-center mb-8">
+                   <h3 className="text-2xl font-black text-slate-900">Configurar Estudio</h3>
+                   <button onClick={() => setShowTypeModal(false)} className="p-2 hover:bg-slate-100 rounded-xl"><X size={24} /></button>
+                </div>
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const newType = { id: `at${Date.now()}`, name: target.name.value, baseCost: parseFloat(target.cost.value), unit: target.unit.value }; setTypes([...types, newType]); setShowTypeModal(false); }} className="space-y-4">
+                   <input name="name" required placeholder="Nombre del Análisis *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="unit" required placeholder="Unidad de Medida (%, ppb, ppm) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <input name="cost" type="number" step="0.01" required placeholder="Costo Base ($) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200" />
+                   <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-3xl mt-6 shadow-xl">Guardar en Catálogo</button>
+                </form>
              </div>
           </div>
         )}
