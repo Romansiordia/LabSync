@@ -256,6 +256,7 @@ const App: React.FC = () => {
   const syncWithGoogle = async (payload: any) => {
     if (!googleUrl) return;
     setIsSyncing(true);
+    console.log("Sincronizando con Google Payload:", payload);
     try {
       await fetch(googleUrl, { 
         method: 'POST', 
@@ -298,20 +299,30 @@ const App: React.FC = () => {
   };
 
   const toggleAnalysis = (id: string) => {
-    const current = newAnalysis.analysisIds || [];
-    const updated = current.includes(id) ? current.filter(i => i !== id) : [...current, id];
-    const totalCost = updated.reduce((acc, analysisId) => {
-       const type = types.find(t => t.id === analysisId);
-       return acc + (type?.baseCost || 0);
-    }, 0);
-    setNewAnalysis({ ...newAnalysis, analysisIds: updated, cost: totalCost });
+    setNewAnalysis(prev => {
+      const current = prev.analysisIds || [];
+      const updated = current.includes(id) 
+        ? current.filter(i => i !== id) 
+        : [...current, id];
+      
+      const totalCost = updated.reduce((acc, analysisId) => {
+        const type = types.find(t => t.id === analysisId);
+        return acc + (type?.baseCost || 0);
+      }, 0);
+
+      return { ...prev, analysisIds: updated, cost: totalCost };
+    });
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Obtenemos los valores más actuales del estado
+    const currentAnalysisIds = newAnalysis.analysisIds || [];
     const clientObj = clients.find(c => c.id === newAnalysis.clientId);
     const techObj = techs.find(t => t.id === newAnalysis.technicianId);
     
+    // Generamos el registro para almacenamiento local
     const record = { 
       ...newAnalysis, 
       id: `a${Date.now()}`, 
@@ -320,16 +331,18 @@ const App: React.FC = () => {
       comments: "" 
     } as AnalysisRecord;
     
-    setAnalyses([record, ...analyses]);
+    setAnalyses(prev => [record, ...prev]);
     setShowAnalysisModal(false);
 
-    // Mapeo de nombres de estudios seleccionados
-    const analysisNames = (record.analysisIds || [])
+    // Mapeo CRÍTICO de nombres de estudios seleccionados
+    const analysisNames = currentAnalysisIds
       .map(id => types.find(t => t.id === id)?.name)
       .filter(Boolean)
       .join(', ');
 
-    // SINCRONIZACIÓN: Mantenemos los nombres de llaves exactos que espera el script de Google
+    console.log("Estudios seleccionados para envío:", analysisNames);
+
+    // SINCRONIZACIÓN: Enviamos el payload con la llave 'analisis'
     syncWithGoogle({
       action: 'create',
       sampleId: record.sampleId,
@@ -342,7 +355,7 @@ const App: React.FC = () => {
       priority: record.priority,
       status: record.status,
       cost: record.cost,
-      analisis: analysisNames, // Llave fundamental para la sincronización de estudios
+      analisis: analysisNames, // Aquí viajan los estudios concatenados
       origin: record.origin,
       provider: record.provider,
       batch: record.batch
@@ -359,7 +372,7 @@ const App: React.FC = () => {
       status: 'Completed' as Status 
     };
 
-    setAnalyses(analyses.map(a => a.id === updated.id ? updated : a));
+    setAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
     setShowResultsModal(false);
 
     const resultsSummary = Object.entries(currentResults)
@@ -560,7 +573,7 @@ const App: React.FC = () => {
                           <td className="px-8 py-5 text-right space-x-2 flex justify-end">
                              {['Admin', 'Technician'].includes(currentUser.role) && (<button onClick={() => { setSelectedRecordForResults(record); setCurrentResults(record.results || {}); setShowResultsModal(true); }} className="text-indigo-600 p-3 hover:bg-indigo-600 hover:text-white rounded-xl border border-indigo-100 bg-white transition-all shadow-sm"><FlaskConical size={18} /></button>)}
                              {record.status === 'Completed' && (<button onClick={() => { setSelectedRecordForReport(record); setShowReportModal(true); }} className="text-slate-600 p-3 hover:bg-slate-800 hover:text-white rounded-xl border border-slate-200 bg-white transition-all shadow-sm"><Printer size={18} /></button>)}
-                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(analyses.filter(a => a.id !== record.id)) }} className="text-red-400 p-3 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
+                             {currentUser.role === 'Admin' && (<button onClick={() => { if(confirm("¿Eliminar registro?")) setAnalyses(prev => prev.filter(a => a.id !== record.id)) }} className="text-red-400 p-3 hover:bg-red-500 hover:text-white rounded-xl transition-all"><Trash2 size={18}/></button>)}
                           </td>
                         </tr>
                       ))}
@@ -582,7 +595,7 @@ const App: React.FC = () => {
                   <div key={client.id} className="bg-white p-6 rounded-3xl border border-slate-200 hover:shadow-lg transition-all">
                     <div className="flex justify-between items-start mb-4">
                        <div className="bg-indigo-50 p-3 rounded-2xl text-indigo-600"><Users size={24} /></div>
-                       {currentUser.role === 'Admin' && <button onClick={() => setClients(clients.filter(c => c.id !== client.id))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18} /></button>}
+                       {currentUser.role === 'Admin' && <button onClick={() => setClients(prev => prev.filter(c => c.id !== client.id))} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={18} /></button>}
                     </div>
                     <h4 className="text-lg font-black text-slate-900">{client.name}</h4>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">{client.contactName}</p>
@@ -606,7 +619,7 @@ const App: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {techs.map(tech => (
                   <div key={tech.id} className="bg-white p-8 rounded-3xl border border-slate-200 hover:shadow-xl transition-all text-center">
-                    <div className="flex justify-end">{currentUser.role === 'Admin' && <button onClick={() => setTechs(techs.filter(t => t.id !== tech.id))} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={16}/></button>}</div>
+                    <div className="flex justify-end">{currentUser.role === 'Admin' && <button onClick={() => setTechs(prev => prev.filter(t => t.id !== tech.id))} className="text-slate-300 hover:text-red-500 p-1"><Trash2 size={16}/></button>}</div>
                     <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto mb-6 text-indigo-600"><UserIcon size={40} /></div>
                     <h4 className="text-xl font-black text-slate-900">{tech.name}</h4>
                     <span className="inline-block px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest rounded-full mt-2">{tech.specialty}</span>
@@ -638,7 +651,7 @@ const App: React.FC = () => {
                         <td className="px-8 py-5 text-center"><span className="px-3 py-1 bg-slate-100 text-slate-500 rounded-lg font-bold text-xs">{type.unit}</span></td>
                         <td className="px-8 py-5 text-right font-mono font-black text-emerald-600">${type.baseCost.toFixed(2)}</td>
                         <td className="px-8 py-5 text-right">
-                          <button onClick={() => {if(confirm("¿Eliminar estudio?")) setTypes(types.filter(t => t.id !== type.id))}} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                          <button onClick={() => {if(confirm("¿Eliminar estudio?")) setTypes(prev => prev.filter(t => t.id !== type.id))}} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={18}/></button>
                         </td>
                       </tr>
                     ))}
@@ -717,16 +730,22 @@ const App: React.FC = () => {
                   <div className="space-y-6">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 mb-2"><FlaskConical size={14} /> Estudios a Realizar</h4>
                     <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 max-h-[250px] overflow-y-auto space-y-2 shadow-inner">
-                       {types.map(t => (
-                          <label key={t.id} className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${newAnalysis.analysisIds?.includes(t.id) ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-[1.02]' : 'bg-white text-slate-600 hover:border-indigo-300'}`}>
-                             <div className="flex items-center gap-3">
-                                {newAnalysis.analysisIds?.includes(t.id) ? <CheckSquare size={20} /> : <Square size={20} />}
-                                <span className="text-sm font-black">{t.name}</span>
-                             </div>
-                             <input type="checkbox" className="hidden" checked={newAnalysis.analysisIds?.includes(t.id)} onChange={() => toggleAnalysis(t.id)} />
-                             <span className="text-[10px] font-black opacity-70 tracking-widest">${t.baseCost}</span>
-                          </label>
-                       ))}
+                       {types.map(t => {
+                          const isSelected = newAnalysis.analysisIds?.includes(t.id);
+                          return (
+                            <div 
+                              key={t.id} 
+                              onClick={() => toggleAnalysis(t.id)}
+                              className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${isSelected ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100 scale-[1.02]' : 'bg-white text-slate-600 hover:border-indigo-300'}`}
+                            >
+                               <div className="flex items-center gap-3">
+                                  {isSelected ? <CheckSquare size={20} /> : <Square size={20} />}
+                                  <span className="text-sm font-black">{t.name}</span>
+                               </div>
+                               <span className="text-[10px] font-black opacity-70 tracking-widest">${t.baseCost}</span>
+                            </div>
+                          );
+                       })}
                     </div>
                     <div className="bg-indigo-50 p-6 rounded-[2rem] border-2 border-indigo-100 flex flex-col items-center">
                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Presupuesto Estimado</span>
@@ -815,7 +834,7 @@ const App: React.FC = () => {
                    <h3 className="text-2xl font-black text-slate-900">Nuevo Cliente</h3>
                    <button onClick={() => setShowClientModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nc = { id: `c${Date.now()}`, name: target.name.value, contactName: target.contact.value, email: target.email.value, phone: target.phone.value, address: target.address.value }; setClients([...clients, nc]); setShowClientModal(false); }} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nc = { id: `c${Date.now()}`, name: target.name.value, contactName: target.contact.value, email: target.email.value, phone: target.phone.value, address: target.address.value }; setClients(prev => [...prev, nc]); setShowClientModal(false); }} className="space-y-4">
                    <div className="space-y-4">
                       <input name="name" required placeholder="Nombre Comercial o Razón Social *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none font-bold" />
                       <input name="contact" required placeholder="Persona de Contacto *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
@@ -837,7 +856,7 @@ const App: React.FC = () => {
                    <h3 className="text-2xl font-black text-slate-900">Añadir Analista</h3>
                    <button onClick={() => setShowTechModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nt = { id: `t${Date.now()}`, name: target.name.value, specialty: target.specialty.value, email: target.email.value, phone: target.phone.value }; setTechs([...techs, nt]); setShowTechModal(false); }} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nt = { id: `t${Date.now()}`, name: target.name.value, specialty: target.specialty.value, email: target.email.value, phone: target.phone.value }; setTechs(prev => [...prev, nt]); setShowTechModal(false); }} className="space-y-4">
                    <div className="space-y-4">
                       <input name="name" required placeholder="Nombre Completo del Analista *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold focus:border-indigo-500 outline-none" />
                       <input name="specialty" required placeholder="Especialidad (Bromatología, Micotoxinas...) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
@@ -858,7 +877,7 @@ const App: React.FC = () => {
                    <h3 className="text-2xl font-black text-slate-900">Configurar Análisis</h3>
                    <button onClick={() => setShowTypeModal(false)} className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><X size={24} /></button>
                 </div>
-                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nty = { id: `at${Date.now()}`, name: target.name.value, baseCost: parseFloat(target.cost.value), unit: target.unit.value }; setTypes([...types, nty]); setShowTypeModal(false); }} className="space-y-4">
+                <form onSubmit={(e) => { e.preventDefault(); const target = e.target as any; const nty = { id: `at${Date.now()}`, name: target.name.value, baseCost: parseFloat(target.cost.value), unit: target.unit.value }; setTypes(prev => [...prev, nty]); setShowTypeModal(false); }} className="space-y-4">
                    <div className="space-y-4">
                       <input name="name" required placeholder="Nombre del Análisis (ej. Proteína) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 font-bold focus:border-indigo-500 outline-none" />
                       <input name="unit" required placeholder="Unidad de Medida (%, ppb, ppm...) *" className="w-full px-6 py-4 rounded-2xl border border-slate-200 focus:border-indigo-500 outline-none" />
